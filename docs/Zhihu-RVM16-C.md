@@ -4,6 +4,8 @@ RVC 已经把常用指令压到 16 位，但 32 位指令仍然存在。RVM16-C 
 
 这不是一个 RISC-V 标准扩展，而是一个**新 ISA**：标准 32 位二进制不兼容，换来的是极端的取指宽度和 code size 试验空间。
 
+> 一句话结论：RVM16-C 在 Dhrystone 类代码上小 19-24%，CoreMark 类约持平；不是通用 C 的 code-size 银弹。
+
 ## 设计取舍
 
 - **16 个 GPR**（x0-x15），不是 32 个；
@@ -27,6 +29,19 @@ block 分配是 16/16：
 | 14 | CSR |
 | 15 | SYS |
 
+![图 1 RVM16-C block map](figs/rvm16c-blockmap.png)
+
+*图 1：quadrant 11 的 16 个 f4 block。RVC 的 00/01/10 不变。*
+
+RVC 基线里尽量加 Zc 扩展：
+
+| 扩展 | 状态 | 用途 |
+|---|---|---|
+| Zcb | 必选 | c.mul、字节/半字 load/store、zext/sext |
+| Zcmp | 必选 | cm.push/pop/popret，2 B prologue/epilogue |
+| Zcf | 必选 | c.flw/c.fsw，F32 compressed load/store |
+| Zcmt | 可选 | cm.jt/cm.jalt，switch table |
+
 ## 数据
 
 FIR/sum 是 llvm-mc 汇编 + Spike 实测；Dhrystone/CoreMark 是静态模型，不是完整编译器产出的二进制。
@@ -37,6 +52,10 @@ FIR/sum 是 llvm-mc 汇编 + Spike 实测；Dhrystone/CoreMark 是静态模型�
 | sum | 24 B | 20 B | -16.7% |
 | Dhrystone | 2508 B | 1906 B（+stub ≈2026） | -19% ~ -24% |
 | CoreMark core | 6398 B | 6316 B | -1.3% |
+
+![图 2 code size 对比](figs/rvm16c-codesize.png)
+
+*图 2：左为 FIR/sum 实测，右为 Dhrystone/CoreMark 静态模型。*
 
 - Dhrystone 有 29 处 .L_MergedGlobals、53 处 .L.str；GP/PC 把地址构造从 8-12 B 降到 2 B，这是主要收益。
 - CoreMark 是栈/结构体密集，GP=0，只有 32 处字符串；加入 Zcmp 的 2 B prologue/epilogue 后，模型约 -1.3%，仍可视作持平。
