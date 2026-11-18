@@ -69,6 +69,7 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - 分支 label fixup 已实现（fixup_riscv_zvmc_branch4/7），FIR/sum 用 .Lloop/.Lend 汇编；LD/ST 语法是 c.lwc rd, off, base；
 - A 的 +zc16q3 仍可用（c.sll 编码 0x052f）。
 - Zcmp 已实测：cm.push {ra,s0-s7}, -48 / cm.pop，Spike-C x10=7，RC=0。
+- Zcf 编码已验证：c.flw/c.fsw/c.flwsp/c.fswsp 可由 llvm-mc（+zcf）汇编；运行时还需要 mstatus.FS 初始化。
 
 ## 6. 有界结论（当前）
 

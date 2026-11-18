@@ -252,6 +252,7 @@ method and caveats.
 
 * Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.
 * Zcmp: cm.push {ra,s0-s7}, -48 / cm.pop tested (x10=7).
+* Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.
 * LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
   assemble and run.
 * No full LLVM backend or Clang ABI; no CoreMark binary yet.
