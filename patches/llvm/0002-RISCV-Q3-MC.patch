@@ -1,5 +1,5 @@
 diff --git a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
-index c62a714c24..c0146f9aa4 100644
+index c62a714c24..2a5203c572 100644
 --- a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
 +++ b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
 @@ -463,6 +463,16 @@ static DecodeStatus decodeXqccmpRlistS0(MCInst &Inst, uint32_t Imm,
@@ -19,7 +19,7 @@ index c62a714c24..c0146f9aa4 100644
  #include "RISCVGenDisassemblerTables.inc"
  
  namespace {
-@@ -675,6 +685,80 @@ DecodeStatus RISCVDisassembler::getInstruction48(MCInst &MI, uint64_t &Size,
+@@ -675,6 +685,204 @@ DecodeStatus RISCVDisassembler::getInstruction48(MCInst &MI, uint64_t &Size,
    return MCDisassembler::Fail;
  }
  
@@ -27,6 +27,7 @@ index c62a714c24..c0146f9aa4 100644
 +                             const MCDisassembler *Decoder) {
 +  unsigned f4 = (Insn >> 12) & 0xF;
 +  auto R = [](unsigned N) { return MCOperand::createReg(N); };
++  auto F = [](unsigned N) { return MCOperand::createReg(N); };
 +  auto I = [](unsigned N) { return MCOperand::createImm(N); };
 +
 +  switch (f4) {
@@ -92,6 +93,129 @@ index c62a714c24..c0146f9aa4 100644
 +      MI.addOperand(I((Insn >> 2) & 7));
 +    }
 +    return MCDisassembler::Success;
++  case 5: {
++    unsigned funct3 = (Insn >> 9) & 7;
++    unsigned rd = 8 + ((Insn >> 6) & 7);
++    unsigned rs2 = 8 + ((Insn >> 3) & 7);
++    unsigned Op;
++    switch (funct3) {
++    case 1: Op = RISCV::C_MULH_Q3; break;
++    case 2: Op = RISCV::C_MULHSU_Q3; break;
++    case 3: Op = RISCV::C_MULHU_Q3; break;
++    case 4: Op = RISCV::C_DIV_Q3; break;
++    case 5: Op = RISCV::C_DIVU_Q3; break;
++    case 6: Op = RISCV::C_REM_Q3; break;
++    case 7: Op = RISCV::C_REMU_Q3; break;
++    default: return MCDisassembler::Fail;
++    }
++    MI.setOpcode(Op);
++    MI.addOperand(R(RISCV::X0 + rd));
++    MI.addOperand(R(RISCV::X0 + rd));
++    MI.addOperand(R(RISCV::X0 + rs2));
++    return MCDisassembler::Success;
++  }
++  case 9:
++  case 10:
++  case 11:
++  case 12: {
++    unsigned funct2 = (Insn >> 10) & 3;
++    unsigned fd = (Insn >> 6) & 0xF;
++    unsigned fs2 = (Insn >> 2) & 0xF;
++    if (f4 == 11 && funct2 >= 2) {
++      MI.setOpcode(funct2 == 2 ? RISCV::C_FEQ_S : RISCV::C_FLT_S);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fs2));
++    } else if (f4 == 12 && funct2 == 0) {
++      MI.setOpcode(RISCV::C_FLE_S);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fs2));
++    } else if (f4 == 12 && funct2 == 1) {
++      MI.setOpcode(RISCV::C_FCVT_S_W);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(R(RISCV::X0 + fs2));
++    } else if (f4 == 12 && funct2 >= 2) {
++      MI.setOpcode(funct2 == 2 ? RISCV::C_FCVT_W_S : RISCV::C_FCLASS_S);
++      MI.addOperand(R(RISCV::X0 + fs2));
++      MI.addOperand(F(RISCV::F0_F + fd));
++    } else {
++      unsigned Op;
++      switch (f4) {
++      case 9:
++        Op = funct2 == 0 ? RISCV::C_FADD_S :
++             funct2 == 1 ? RISCV::C_FSUB_S :
++             funct2 == 2 ? RISCV::C_FMUL_S : RISCV::C_FDIV_S;
++        break;
++      case 10:
++        Op = funct2 == 0 ? RISCV::C_FSQRT_S :
++             funct2 == 1 ? RISCV::C_FMIN_S :
++             funct2 == 2 ? RISCV::C_FMAX_S : RISCV::C_FSGNJ_S;
++        break;
++      case 11:
++        Op = funct2 == 0 ? RISCV::C_FSGNJN_S : RISCV::C_FSGNJX_S;
++        break;
++      default:
++        return MCDisassembler::Fail;
++      }
++      MI.setOpcode(Op);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fs2));
++    }
++    return MCDisassembler::Success;
++  }
++  case 13: {
++    unsigned funct2 = (Insn >> 10) & 3;
++    unsigned fd = (Insn >> 6) & 0xF;
++    if (funct2 == 0) {
++      MI.setOpcode(RISCV::C_FMV_X_W);
++      MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 0xF)));
++      MI.addOperand(F(RISCV::F0_F + fd));
++    } else if (funct2 == 1) {
++      MI.setOpcode(RISCV::C_FMV_W_X);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 0xF)));
++    } else {
++      static const unsigned Bases[4] = {RISCV::X8, RISCV::X9, RISCV::X2,
++                                        RISCV::X3};
++      MI.setOpcode(funct2 == 2 ? RISCV::C_FLW_Q3 : RISCV::C_FSW_Q3);
++      MI.addOperand(F(RISCV::F0_F + fd));
++      MI.addOperand(R(Bases[(Insn >> 4) & 3]));
++      MI.addOperand(I((Insn >> 2) & 3));
++    }
++    return MCDisassembler::Success;
++  }
++  case 14: {
++    unsigned op2 = (Insn >> 2) & 3;
++    unsigned csr = (Insn >> 8) & 0xF;
++    unsigned reg = (Insn >> 4) & 0xF;
++    if (op2 == 0) {
++      MI.setOpcode(RISCV::C_CSRR_Q3);
++      MI.addOperand(R(RISCV::X0 + reg));
++      MI.addOperand(I(csr));
++    } else {
++      MI.setOpcode(op2 == 1 ? RISCV::C_CSRW_Q3 :
++                    op2 == 2 ? RISCV::C_CSRS_Q3 : RISCV::C_CSRC_Q3);
++      MI.addOperand(I(csr));
++      MI.addOperand(R(RISCV::X0 + reg));
++    }
++    return MCDisassembler::Success;
++  }
++  case 15: {
++    unsigned imm = (Insn >> 2) & 0x3FF;
++    unsigned Op;
++    switch (imm) {
++    case 0: Op = RISCV::C_ECALL_Q3; break;
++    case 2: Op = RISCV::C_MRET_Q3; break;
++    case 3: Op = RISCV::C_WFI_Q3; break;
++    case 4: Op = RISCV::C_FENCE_Q3; break;
++    case 5: Op = RISCV::C_FENCE_I_Q3; break;
++    default: return MCDisassembler::Fail;
++    }
++    MI.setOpcode(Op);
++    return MCDisassembler::Success;
++  }
 +  default:
 +    return MCDisassembler::Fail;
 +  }
@@ -100,7 +224,7 @@ index c62a714c24..c0146f9aa4 100644
  DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
                                                 ArrayRef<uint8_t> Bytes,
                                                 uint64_t Address,
-@@ -684,6 +768,17 @@ DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
+@@ -684,6 +892,17 @@ DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
    if ((Bytes[0] & 0b11) == 0b00 || (Bytes[0] & 0b11) == 0b01)
      return getInstruction16(MI, Size, Bytes, Address, CS);
  
