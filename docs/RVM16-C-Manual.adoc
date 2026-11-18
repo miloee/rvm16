@@ -47,7 +47,10 @@ byte for byte.  The baseline is:
 * Zcmp is mandatory: cm.push/pop/popret/popretz, used as a save-all
   prologue/epilogue;
 * Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;
-* Zcmt is optional: cm.jt/cm.jalt for switch tables;
+* Zcmt is optional for M/F profiles, mandatory for the RVM16-C-E (Zce)
+  profile: cm.jt index 0-31, cm.jalt index 32-255, using the jvt CSR;
+* Zcd requires D/FLEN=64; RVM16-C is F32-only, so c.fld/c.fsd are not
+  applicable.  Adding D would change the F32-only premise and the FP ABI.
 * RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.
 
 RVM16-C does not redefine any RVC instruction.  Its new instructions use
@@ -253,6 +256,8 @@ method and caveats.
 * Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.
 * Zcmp: cm.push {ra,s0-s7}, -48 / cm.pop tested (x10=7).
 * Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.
+* Zcmt: cm.jt 0-31 / cm.jalt 32-255 encodings verified with +zcmt;
+  runtime needs jvt and a table, not tested.
 * LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
   assemble and run.
 * No full LLVM backend or Clang ABI; no CoreMark binary yet.
@@ -289,6 +294,7 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.
 | Profile | Mandatory | Optional
 | RVM16-C-M | I, M, C v2.0, Zcb, Zcmp, Zicsr | Zcmt, Zcf (no F)
 | RVM16-C-F | I, M, F, C v2.0, Zcb, Zcmp, Zcf | Zcmt
+| RVM16-C-E | I, M, C v2.0, Zcb, Zcmp, Zcmt | Zcf optional
 |===
 
 F32 uses 16 FP registers f0-f15.  Zcf compressed loads/stores use f8-f15;

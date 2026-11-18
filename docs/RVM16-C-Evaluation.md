@@ -71,6 +71,8 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - A 的 +zc16q3 仍可用（c.sll 编码 0x052f）。
 - Zcmp 已实测：cm.push {ra,s0-s7}, -48 / cm.pop，Spike-C x10=7，RC=0。
 - Zcf 编码已验证：c.flw/c.fsw/c.flwsp/c.fswsp 可由 llvm-mc（+zcf）汇编；运行时还需要 mstatus.FS 初始化。
+- Zcmt 编码已验证：cm.jt 0-31 / cm.jalt 32-255（+zcmt）；运行时需要 jvt/table，未测。
+- Zcd 不适用：需要 D/FLEN=64，RVM16-C 只有 F32。
 
 ## 6. 有界结论（当前）
 
