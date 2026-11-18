@@ -25,7 +25,7 @@ _start:
 fir:
 .Lfir:
   c.li a1, 0
-  c.blezc a0, 10
+  c.blezc a0, .Lend
   c.slli a0, 2
   c.addc a0, s1
 .Lloop:
@@ -35,8 +35,9 @@ fir:
   c.mul a2, a3
   c.addc a1, a2
   c.addi s0, 4
-  c.bnec s1, a0, 10
-  c.mv s0, a1
+  c.bnec s1, a0, .Lloop
+  .Lend:
+c.mv s0, a1
   c.jr ra
 .size fir, .-fir
 

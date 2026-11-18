@@ -23,15 +23,16 @@ _start:
 sum:
 .Lsum:
   c.li a0, 0
-  c.blezc s1, 7
+  c.blezc s1, .Lend
   c.slli s1, 2
   c.addc s1, s0
 .Lloop:
   c.lwc a1, 0, s0
   c.addi s0, 4
   c.addc a0, a1
-  c.bnec s0, s1, 13
-  c.mv s0, a0
+  c.bnec s0, s1, .Lloop
+  .Lend:
+c.mv s0, a0
   c.jr ra
 .size sum, .-sum
 

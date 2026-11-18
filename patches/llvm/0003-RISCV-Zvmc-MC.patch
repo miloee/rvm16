@@ -1,3 +1,120 @@
+diff --git a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVAsmBackend.cpp b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVAsmBackend.cpp
+index 8e4dab0a59..f67ba65446 100644
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVAsmBackend.cpp
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVAsmBackend.cpp
+@@ -84,6 +84,8 @@ MCFixupKindInfo RISCVAsmBackend::getFixupKindInfo(MCFixupKind Kind) const {
+       {"fixup_riscv_branch", 0, 32, 0},
+       {"fixup_riscv_rvc_jump", 2, 11, 0},
+       {"fixup_riscv_rvc_branch", 0, 16, 0},
++      {"fixup_riscv_zvmc_branch4", 0, 16, 0},
++      {"fixup_riscv_zvmc_branch7", 0, 16, 0},
+       {"fixup_riscv_rvc_imm", 0, 16, 0},
+       {"fixup_riscv_call", 0, 64, 0},
+       {"fixup_riscv_call_plt", 0, 64, 0},
+@@ -604,6 +606,16 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
+             (Bit5 << 2);
+     return Value;
+   }
++  case RISCV::fixup_riscv_zvmc_branch4: {
++    if (!isInt<5>(Value) || (Value & 1))
++      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
++    return ((Value >> 1) & 0xF) << 2;
++  }
++  case RISCV::fixup_riscv_zvmc_branch7: {
++    if (!isInt<8>(Value) || (Value & 1))
++      Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
++    return ((Value >> 1) & 0x7F) << 2;
++  }
+   case RISCV::fixup_riscv_rvc_imm: {
+     if (!isInt<6>(Value))
+       Ctx.reportError(Fixup.getLoc(), "fixup value out of range");
+diff --git a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.h b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.h
+index 0eba38f2c8..1d2fea030d 100644
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.h
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.h
+@@ -168,6 +168,8 @@ enum {
+   InstFormatCU = 17,
+   InstFormatCLB = 18,
+   InstFormatCLH = 19,
++  InstFormatZVMCB = 20,
++  InstFormatZVMCBZ = 21,
+   InstFormatCSB = 20,
+   InstFormatCSH = 21,
+   InstFormatQC_EAI = 22,
+diff --git a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFObjectWriter.cpp b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFObjectWriter.cpp
+index e47102b508..fafb9f1608 100644
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFObjectWriter.cpp
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVELFObjectWriter.cpp
+@@ -95,6 +95,9 @@ unsigned RISCVELFObjectWriter::getRelocType(const MCFixup &Fixup,
+       return ELF::R_RISCV_RVC_JUMP;
+     case RISCV::fixup_riscv_rvc_branch:
+       return ELF::R_RISCV_RVC_BRANCH;
++    case RISCV::fixup_riscv_zvmc_branch4:
++    case RISCV::fixup_riscv_zvmc_branch7:
++      return ELF::R_RISCV_BRANCH;
+     case RISCV::fixup_riscv_call:
+       return ELF::R_RISCV_CALL_PLT;
+     case RISCV::fixup_riscv_call_plt:
+@@ -113,6 +116,9 @@ unsigned RISCVELFObjectWriter::getRelocType(const MCFixup &Fixup,
+     reportError(Fixup.getLoc(), "unsupported relocation type");
+     return ELF::R_RISCV_NONE;
+ 
++  case RISCV::fixup_riscv_zvmc_branch4:
++  case RISCV::fixup_riscv_zvmc_branch7:
++    return ELF::R_RISCV_BRANCH;
+   case FK_Data_1:
+     reportError(Fixup.getLoc(), "1-byte data relocations not supported");
+     return ELF::R_RISCV_NONE;
+diff --git a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVFixupKinds.h b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVFixupKinds.h
+index 8104ee0291..df485bda1f 100644
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVFixupKinds.h
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVFixupKinds.h
+@@ -39,6 +39,8 @@ enum Fixups {
+   fixup_riscv_rvc_jump,
+   // 8-bit fixup for symbol references in the compressed branch instruction
+   fixup_riscv_rvc_branch,
++  fixup_riscv_zvmc_branch4,
++  fixup_riscv_zvmc_branch7,
+   // 6-bit fixup for symbol references in instructions like c.li
+   fixup_riscv_rvc_imm,
+   // Fixup representing a legacy no-pic function call attached to the auipc
+diff --git a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVMCCodeEmitter.cpp b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVMCCodeEmitter.cpp
+index 31205fda3e..44f347df44 100644
+--- a/llvm/lib/Target/RISCV/MCTargetDesc/RISCVMCCodeEmitter.cpp
++++ b/llvm/lib/Target/RISCV/MCTargetDesc/RISCVMCCodeEmitter.cpp
+@@ -152,6 +152,8 @@ static void addFixup(SmallVectorImpl<MCFixup> &Fixups, uint32_t Offset,
+   case RISCV::fixup_riscv_call_plt:
+   case RISCV::fixup_riscv_qc_e_branch:
+   case RISCV::fixup_riscv_qc_e_call_plt:
++  case RISCV::fixup_riscv_zvmc_branch4:
++  case RISCV::fixup_riscv_zvmc_branch7:
+   case RISCV::fixup_riscv_nds_branch_10:
+     PCRel = true;
+   }
+@@ -887,6 +889,10 @@ uint64_t RISCVMCCodeEmitter::getImmOpValue(const MCInst &MI, unsigned OpNo,
+       FixupKind = RISCV::fixup_riscv_rvc_branch;
+       // Relaxes to B<cc>; JAL, with fixup_riscv_jal
+       AsmRelaxToLinkerRelaxable();
++    } else if (MIFrm == RISCVII::InstFormatZVMCB) {
++      FixupKind = RISCV::fixup_riscv_zvmc_branch4;
++    } else if (MIFrm == RISCVII::InstFormatZVMCBZ) {
++      FixupKind = RISCV::fixup_riscv_zvmc_branch7;
+     } else if (MIFrm == RISCVII::InstFormatCI) {
+       FixupKind = RISCV::fixup_riscv_rvc_imm;
+       // Relaxes to `QC.E.LI` with fixup_riscv_qc_e_32
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrFormats.td b/llvm/lib/Target/RISCV/RISCVInstrFormats.td
+index e3c93dc93a..e6547623e9 100644
+--- a/llvm/lib/Target/RISCV/RISCVInstrFormats.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrFormats.td
+@@ -50,6 +50,8 @@ def InstFormatCJ            : InstFormat<16>;
+ def InstFormatCU            : InstFormat<17>;
+ def InstFormatCLB           : InstFormat<18>;
+ def InstFormatCLH           : InstFormat<19>;
++def InstFormatZVMCB         : InstFormat<20>;
++def InstFormatZVMCBZ        : InstFormat<21>;
+ def InstFormatCSB           : InstFormat<20>;
+ def InstFormatCSH           : InstFormat<21>;
+ def InstFormatQC_EAI        : InstFormat<22>;
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfo.td b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
 index 9c977dac23..1d880690de 100644
 --- a/llvm/lib/Target/RISCV/RISCVInstrInfo.td
@@ -11,9 +128,39 @@ index 9c977dac23..1d880690de 100644
  include "RISCVInstrInfoZcmop.td"
  include "RISCVInstrInfoZclsd.td"
  
---- /dev/null	2026-11-18 19:04:32.861742944 +0800
-+++ llvm/lib/Target/RISCV/RISCVInstrInfoZvmc.td	2026-11-18 19:02:14.381493230 +0800
-@@ -0,0 +1,98 @@
+--- /dev/null	2026-11-18 19:15:09.426573578 +0800
++++ llvm/lib/Target/RISCV/RISCVInstrInfoZvmc.td	2026-11-18 19:09:00.398208195 +0800
+@@ -0,0 +1,132 @@
++
++def bare_simm4_lsb0 : Operand<OtherVT>,
++                     ImmLeaf<XLenVT, [{return isShiftedInt<3, 1>(Imm);}]> {
++  let ParserMatchClass = BareSImmNLsb0AsmOperand<4>;
++  let PrintMethod = "printBranchOperand";
++  let EncoderMethod = "getImmOpValueAsrN<1>";
++  let DecoderMethod = "decodeSImmOperandAndLslN<4, 1>";
++  let MCOperandPredicate = [{
++    int64_t Imm;
++    if (MCOp.evaluateAsConstantImm(Imm))
++      return isShiftedInt<3, 1>(Imm);
++    return MCOp.isBareSymbolRef();
++  }];
++  let OperandType = "OPERAND_PCREL";
++}
++
++def bare_simm7_lsb0 : Operand<OtherVT>,
++                     ImmLeaf<XLenVT, [{return isShiftedInt<6, 1>(Imm);}]> {
++  let ParserMatchClass = BareSImmNLsb0AsmOperand<7>;
++  let PrintMethod = "printBranchOperand";
++  let EncoderMethod = "getImmOpValueAsrN<1>";
++  let DecoderMethod = "decodeSImmOperandAndLslN<7, 1>";
++  let MCOperandPredicate = [{
++    int64_t Imm;
++    if (MCOp.evaluateAsConstantImm(Imm))
++      return isShiftedInt<6, 1>(Imm);
++    return MCOp.isBareSymbolRef();
++  }];
++  let OperandType = "OPERAND_PCREL";
++}
 +//===-- RISCVInstrInfoZvmc.td - RVM16-C test instructions --*- tablegen -*-===//
 +//
 +// RVM16-C: 16 GPR, quadrant 11 only, distinct mnemonics for MC testing.
@@ -37,8 +184,8 @@ index 9c977dac23..1d880690de 100644
 +
 +let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
 +class ZvmcBR<bits<4> f4, string op>
-+    : RVInst16<(outs), (ins GPRC:$rs1, GPRC:$rs2, uimm4:$off),
-+               op, "$rs1, $rs2, $off", [], InstFormatOther> {
++    : RVInst16<(outs), (ins GPRC:$rs1, GPRC:$rs2, bare_simm4_lsb0:$off),
++               op, "$rs1, $rs2, $off", [], InstFormatZVMCB> {
 +  bits<3> rs1;
 +  bits<3> rs2;
 +  bits<4> off;
@@ -47,18 +194,22 @@ index 9c977dac23..1d880690de 100644
 +  let Inst{8-6} = rs2;
 +  let Inst{5-2} = off;
 +  let Inst{1-0} = 0b11;
++  let isBranch = 1;
++  let isTerminator = 1;
 +}
 +
 +let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
 +class ZvmcBLEZ<bits<4> f4, string op>
-+    : RVInst16<(outs), (ins GPRC:$rs, uimm7:$off),
-+               op, "$rs, $off", [], InstFormatOther> {
++    : RVInst16<(outs), (ins GPRC:$rs, bare_simm7_lsb0:$off),
++               op, "$rs, $off", [], InstFormatZVMCBZ> {
 +  bits<3> rs;
 +  bits<7> off;
 +  let Inst{15-12} = f4;
 +  let Inst{11-9} = rs;
 +  let Inst{8-2} = off;
 +  let Inst{1-0} = 0b11;
++  let isBranch = 1;
++  let isTerminator = 1;
 +}
 +
 +let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in

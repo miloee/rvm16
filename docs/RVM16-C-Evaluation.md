@@ -66,7 +66,7 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 
 - LLVM C MC 已实现，挂在 +zc16q3 下，用 distinct mnemonics（c.addc/c.bnec/c.lwgc/...）；
 - FIR/sum 由 llvm-mc 汇编，函数 26/20 B，Spike-C 运行 x8=70/10；
-- 分支偏移目前是 raw uimm4/uimm7，没有 label fixup；LD/ST 语法是 c.lwc rd, off, base；
+- 分支 label fixup 已实现（fixup_riscv_zvmc_branch4/7），FIR/sum 用 .Lloop/.Lend 汇编；LD/ST 语法是 c.lwc rd, off, base；
 - A 的 +zc16q3 仍可用（c.sll 编码 0x052f）。
 
 ## 6. 有界结论（当前）
