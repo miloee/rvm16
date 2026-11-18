@@ -54,3 +54,11 @@ Model:
 
 Block bound:
   wsl -d Ubuntu -- python3 /mnt/d/dsh_workspace/rva-e/tools/block_bound.py ...
+
+## 2026-11-18 update
+
+- F32: all 20 instructions executed on Spike-C with expected values.
+- SYS: ecall/ebreak/mret tested with a trap handler; fence/fence.i pass.
+- CSR: csrw/csrr/csrs/csrc pass.
+- CoreMark: seeds 0, CRC final 0x4983, "Correct operation validated", RC=0.
+- Linpack float: still timing out; not validated.
