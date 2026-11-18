@@ -5,7 +5,11 @@
 | Document | What it covers |
 |---|---|
 | RVM16-ISA-Manual.adoc | Normative manual, AsciiDoc book in RISC-V manual style (draft 0.5) |
-| RVM16-C-Design.md | RVM16-C complete proposal: 16 GPR, RVC-compatible, no-flags, 3-address + fused branches |
+| RVM16-C-Manual.adoc | RVM16-C proposal manual (AsciiDoc): 16 GPR, ALU-12, fused branches, GP/PC, F32, ABI |
+| RVM16-C-Manual.html | Built HTML preview of the C manual |
+| RVM16-C-Design.md | RVM16-C design notes and block rationale |
+| RVM16-C-Evaluation.md | Dhrystone/CoreMark model, metrics, bounded conclusion |
+| Zhihu-RVM16-C.md | Chinese article draft for RVM16-C |
 | RVA-E16-ISA-Manual.md | Working Markdown notes; the .adoc is the normative text |
 | RVA-E16-Q3-Allocation.md | 16-block Q3 allocation and field budgets |
 | RVM16-vs-RV32E.md | Comparison with RV32E / RV32EC+Zc* |

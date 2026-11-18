@@ -1,0 +1,256 @@
+= RVM16-C ISA Manual
+:doctype: book
+:revnumber: 0.1
+:revdate: 2026-11-18
+:author: RVM16-C project
+:icons: font
+:toc: left
+:toclevels: 3
+:secnumlevels: 3
+
+== Preface
+
+RVM16-C is a strict 16-bit scalar RISC-V variant for code-size-sensitive
+embedded systems.  It keeps the RVC encodings in quadrants 00, 01 and 10
+unchanged and uses quadrant 11 for a new 16-bit instruction set.  It has
+16 general-purpose registers, no condition flags, fused compare branches,
+and GP/PC-relative load/store.
+
+This document is a proposal manual, not a ratified RISC-V specification.
+It follows the style of the RISC-V manual but defines a new ISA: redefining
+quadrant 11 means standard 32-bit RISC-V binaries are not compatible.
+
+== 1. Introduction
+
+RVC already compresses many common instructions to 16 bits.  RVM16-C goes
+further: every instruction is 16 bits, and the encoding is rebalanced for
+C code size rather than for 32-bit compatibility.
+
+The design targets the following workloads:
+
+* pointer loops and small kernels (FIR, sum, memcpy, CRC);
+* control code with globals and string addresses;
+* F32 arithmetic without FMA.
+
+It is not intended to beat RVGC on every workload.  The evaluation in
+Chapter 13 shows a clear win on Dhrystone-like code and roughly parity on
+CoreMark-like code.
+
+== 2. RVC Baseline
+
+RVM16-C inherits the standard RVC instructions in quadrants 00, 01 and 10
+byte for byte.  The baseline is:
+
+* C v2.0;
+* Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h/w,
+  c.sext.b/h, c.not;
+* Zcmp/Zcmt are optional and use their standard encodings;
+* RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.
+
+RVM16-C does not redefine any RVC instruction.  Its new instructions use
+quadrant 11 only.
+
+== 3. Register Model and ABI
+
+=== 3.1 Registers
+
+[%autowidth,options="header"]
+|===
+| Register | Role
+| x0 | zero
+| x1 | ra
+| x2 | sp
+| x3 | gp (required for GP-relative)
+| x4 | tp (optional)
+| x5-x6 | temporaries
+| x7 | cold-CSR address scratch
+| x8-x13 | a0-a5: arguments, returns, temporaries
+| x14-x15 | s0-s1: callee-saved
+| x16-x31 | not implemented
+|===
+
+=== 3.2 ABI
+
+* Integer and pointer arguments: a0-a5 = x8-x13;
+* returns: a0/a1 = x8/x9;
+* F32 arguments: f0-f7; returns f0; f8-f15 callee-saved;
+* s0/s1 saved only when used;
+* sp 16-byte aligned;
+* variadic calls use a0-a5 and f0-f7;
+* branch operands must be in x8-x15.
+
+The first two pointer arguments naturally land in x8/x9, which are Q3 base
+registers, so loads do not need a preceding c.mv.
+
+== 4. Encoding Framework
+
+Every instruction is 16 bits:
+
+    bits[1:0] = 0b11
+    bits[15:12] = f4 (block selector)
+    bits[11:2] = 10-bit payload
+
+The 16 blocks are:
+
+[%autowidth,options="header"]
+|===
+| f4 | Contents
+| 0-2 | ALU-12: add/sub/and/or/xor/sll/srl/sra/slt/sltu (2-address)
+| 3 | GP/PC-relative: lwgp/swgp/lwpc
+| 4 | M: mulh/mulhsu/mulhu/div/divu/rem/remu
+| 5 | c.bne
+| 6 | c.blt
+| 7 | c.blez
+| 8 | LD/ST: lwc/swc
+| 9-13 | F32
+| 14 | CSR
+| 15 | SYS
+|===
+
+== 5. ALU-12
+
+    word = (f4 << 12) | (funct2 << 10) | (rd << 6) | (rs2 << 2) | 0b11
+
+rd and rs2 are 4-bit (x0-x15); the operation is rd = rd op rs2.
+
+[%autowidth,options="header"]
+|===
+| f4 | funct2 | Instruction
+| 0 | 0 | add
+| 0 | 1 | sub
+| 0 | 2 | and
+| 0 | 3 | or
+| 1 | 0 | xor
+| 1 | 1 | sll
+| 1 | 2 | srl
+| 1 | 3 | sra
+| 2 | 0 | slt
+| 2 | 1 | sltu
+| 2 | 2-3 | reserved
+|===
+
+== 6. Fused Branches
+
+=== 6.1 c.bne and c.blt
+
+    word = (f4 << 12) | (rs1_3 << 9) | (rs2_3 << 6) | (off4 << 2) | 0b11
+
+rs1_3/rs2_3 are x8-x15.  off4 is signed, scaled by 2, range -16..+14 bytes.
+f4=5 is c.bne, f4=6 is c.blt.  c.bge rs1,rs2,L is c.blt rs2,rs1,L.
+
+=== 6.2 c.blez
+
+    word = (7 << 12) | (rs_3 << 9) | (off7 << 2) | 0b11
+
+rs_3 is x8-x15; off7 is signed, scaled by 2, range -128..+126 bytes.
+
+=== 6.3 Conditions without a fused branch
+
+beq is not in the ISA; it expands to xor + c.beqz (4 bytes).  bgeu/bltu
+expand to sltu + c.beqz/c.bnez (6 bytes).  Out-of-range off4/off7 branches
+use a c.j trampoline.
+
+== 7. GP/PC-relative Load/Store
+
+    word = (3 << 12) | (funct2 << 10) | (rd_3 << 7) | (off5 << 2) | 0b11
+
+funct2: 0 = lwgp, 1 = swgp, 2 = lwpc, 3 reserved.
+
+* lwgp/swgp: address = gp + off5*4, gp = x3, off5 = 0..31 (0..124 B);
+* lwpc: address = pc + off5*4, loads a 32-bit literal from a pool within
+  124 bytes.
+
+GP-relative accesses handle small globals.  PC-relative literals handle
+string addresses and large constants without li32.
+
+== 8. Load/Store
+
+    word = (8 << 12) | (funct2 << 10) | (reg << 6) | (base << 4) | (off2 << 2) | 0b11
+
+funct2: 0 = lwc, 1 = swc, 2-3 reserved.  reg is x0-x15; base is 2 bits:
+0 = x8, 1 = x9, 2 = sp, 3 = gp.  off2 is scaled by access size (0-12 B for
+words).  Byte and halfword accesses use Zcb.
+
+== 9. M Extension
+
+    word = (4 << 12) | (funct3 << 9) | (rd_3 << 6) | (rs2_3 << 3) | 0b11
+
+funct3: 0 reserved (c.mul is Zcb), 1 mulh, 2 mulhsu, 3 mulhu, 4 div,
+5 divu, 6 rem, 7 remu.  rd_3/rs2_3 are x8-x15.
+
+== 10. F32
+
+    word = (f4 << 12) | (funct2 << 10) | (fd << 6) | (fs2 << 2) | 0b11
+
+fd/fs2 are 4-bit (f0-f15).  The 20 operations are the same as RVM16-A:
+
+[%autowidth,options="header"]
+|===
+| f4 | funct2 | Operations
+| 9 | 0-3 | fadd/fsub/fmul/fdiv
+| 10 | 0-3 | fsqrt/fmin/fmax/fsgnj
+| 11 | 0-1 | fsgnjn/fsgnjx
+| 11 | 2-3 | feq/flt
+| 12 | 0 | fle
+| 12 | 1-3 | fcvt.s.w/fcvt.w.s/fclass
+| 13 | 0-1 | fmv.x.w/fmv.w.x
+| 13 | 2-3 | flw/fsw
+|===
+
+There is no FMA.  frm is dynamic.  fcmp writes the 4-bit fd field; the
+compiler should choose x8-x15 if the result feeds a fused branch.
+
+== 11. CSR and SYS
+
+CSR:
+
+    word = (14 << 12) | (csr4 << 8) | (reg4 << 4) | (op2 << 2) | 0b11
+
+op2: 0 csrr, 1 csrw, 2 csrs, 3 csrc.  csr4=0 uses the cold path with the
+12-bit CSR address in x7.
+
+SYS:
+
+    word = (15 << 12) | (imm10 << 2) | 0b11
+
+imm10: 0 ecall, 1 ebreak, 2 mret, 3 wfi, 4 fence, 5 fence.i.
+
+== 12. Exceptions and Traps
+
+RVM16-C uses the standard RISC-V trap model.  Misaligned load/store, illegal
+instruction, ecall and ebreak raise the corresponding cause.  Because all
+instructions are 16 bits, mepc always points at a 2-byte boundary.
+
+== 13. Code Size Evaluation (Non-Normative)
+
+[%autowidth,options="header"]
+|===
+| Benchmark | RV32EC+Zc* | RVM16-C (model) | Delta
+| FIR | 30 | 26 | -13.3%
+| sum | 24 | 20 | -16.7%
+| Dhrystone | 2508 | 1948 (2068 with stubs) | -17% to -22%
+| CoreMark core | 6398 | 6532 | +2.1%
+|===
+
+Dhrystone has 29 .L_MergedGlobals and 53 .L.str references; GP/PC-relative
+addressing removes most of the address construction.  CoreMark is stack and
+struct heavy, has no GP-relative globals, and is roughly parity.
+
+The static model is not a compiler.  See docs/RVM16-C-Evaluation.md for the
+method and caveats.
+
+== 14. Implementation Status
+
+* Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.
+* LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
+  assemble and run.
+* No full LLVM backend or Clang ABI; no CoreMark binary yet.
+* RVM16-A (32 GPR) remains the negative control.
+
+== Appendix A. Revision History
+
+[%autowidth,options="header"]
+|===
+| Version | Changes
+| 0.1 | Initial RVM16-C proposal: 16 GPR, ALU-12, fused branches, GP/PC, F32, ABI, evaluation
+|===
