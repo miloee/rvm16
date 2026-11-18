@@ -36,26 +36,46 @@ RVM16 保留 00/01/10 的 RVC 逐字节不变，把 11 象限改成一个新的 
 
 - LLVM MC：c.sll/c.srl/c.sra/c.slt/c.sltu/c.xori/c.lw/c.sw，CA3 的 7 条 M（c.mulh/div/rem 等），CSR 块（c.csrr/csrw/csrs/csrc），以及 20 条 F32（c.fadd.s … c.fsw），都能汇编出正确编码；
 - Spike：同一批 Q3 指令能执行，F32 的 fadd/fsqrt/fcvt/flw/fsw 已经在 Spike 上跑通；
-- 反汇编：llvm-mc -disassemble 能解 f4 0–8 的 Q3（ALU、xori、lw/sw），FP 反汇编还在补；
+- 反汇编：llvm-mc -disassemble 能解全部 Q3 block（ALU、M、FP、CSR、SYS）；
 - 端到端：LLVM 汇编 → ELF → Spike → HTIF 退出 0。
 
-## 四、Code size 实测（手写内核）
+## 四、Code size 实测
 
-先说明：C 的 Expand16 还没完成，下面是手写汇编的同逻辑对比，不是 CoreMark 数据。RV32 侧用 llvm-mc -mattr=+c,+m,+f，Q3 侧用 +c,+f,+zc16q3，取 .text 大小。
+RV32 侧用 llvm-mc -mattr=+c,+m,+f，Q3 侧用 +m,+c,+zcb,+zc16q3，取 .text。先说结论：**手写内核能降，naive 编译的 C 代码不一定降**。
 
-| 小程序 | RV32IMAF_C | RVM16 | 降幅 |
+### 手写内核（best case）
+
+| 小程序 | RV32IMAF_C | RVM16 | 变化 |
 |---|---:|---:|---:|
-| ALU（sll/mul/slt/xori + 退出） | 42 B | 30 B | 28.6% |
-| FP（1.0+1.0、fcvt、退出） | 42 B | 36 B | 14.3% |
-| FP（fsw/flw/fsqrt/fcvt + 退出） | 56 B | 50 B | 10.7% |
+| ALU（sll/mul/slt/xori + 退出） | 42 B | 30 B | -28.6% |
+| FP（1.0+1.0、fcvt、退出） | 48 B | 42 B | -12.5% |
+| FP（fsw/flw/fsqrt/fcvt + 退出） | 62 B | 56 B | -9.7% |
 
-注：FP 行的 RV32 数字不含启动时的 mstatus.FS 初始化（csrs 序列 6 B）；Q3 侧目前也没有做 FS 初始化。
+两边都含 FS 初始化（RV32 用 csrs mstatus，Q3 用 c.csrw mstatus）。
+
+### clang -O2 + naive Expand16（真实 C 路径）
+
+| C 函数 | RV32IMAF_C | RVM16 | 变化 |
+|---|---:|---:|---:|
+| fir（循环、2 个 load、mul） | 32 B | 38 B | +18.8% |
+| sum（循环、1 个 load） | 24 B | 30 B | +25.0% |
+| call（add + f，栈/ra） | 24 B | 18 B | -25.0% |
+
+### 优化后（指针常驻 s0/s1，去掉每条 load 前的 c.mv）
+
+| C 函数 | RV32IMAF_C | RVM16 | 变化 |
+|---|---:|---:|---:|
+| fir | 32 B | 34 B | +6.3% |
+| sum | 24 B | 28 B | +16.7% |
 
 几个观察：
 
-- 纯 ALU 程序收益最大，因为 32 位的 sll/mul/slt/xori 都变成了单条 Q3；
-- FP 程序收益小一些，因为 RV32 侧已经大量使用 RVC，Q3 的 FP 又是两地址，某些 move 省不掉；
-- 程序越小，固定开销（构建常量、退出序列）占比越高，降幅会被稀释。等 Expand16 做完，跑 CoreMark/Dhrystone 才能给出有说服力的数字。
+- 纯 ALU 和 call/stack 收益最大：32 位的 sll/mul 变成单条 Q3，prologue/epilogue 用 RVC 的 c.sw/c.lw；
+- 指针/循环密集的 fir/sum，naive 展开反而变大：每条 load 前要 c.mv s0, a0，三地址运算要 mv，条件分支要 compare+branch；
+- 把指针常驻 s0/s1 后，fir 从 +18.8% 收到 +6.3%，sum 从 +25% 收到 +16.7%；但还没有转正；
+- 关键瓶颈是**没有 flags、也没有双寄存器条件分支**：一条 bne 要展开成 mv+xor+bnez（6 B），而 RV32 的 bne 是 4 B。如果 Q3 加一个 c.bne rs1', rs2', off（2 B），fir 会变成 30 B（-6.3%），sum 26 B（+8.3%）。
+
+所以严格 16 位不是“免费的 code size 优化”，它需要编译器和 ISA 协同设计。这个结论比单看 best case 更重要。
 
 ## 五、跑起来是什么样
 
@@ -69,7 +89,7 @@ Q3 程序在 16 位 Spike 上：
 
 1.0 + 1.0 = 2，fcvt.w.s 写回 a1=2。
 
-对应的 RV32IMAF_C 程序在标准 Spike 上同样 RC=0。FP 程序在 RV32 侧需要先 csrs mstatus 打开 FS；Q3 侧目前是 PoC 的直接写 FPR，正式实现也要处理 FS/CSR。
+对应的 RV32IMAF_C 程序在标准 Spike 上同样 RC=0。两边都做了 FS 初始化：RV32 用 csrs mstatus，Q3 用 c.csrw 1（mstatus）。
 
 | 程序 | RV32IMAF_C | RVM16 |
 |---|---|---|
@@ -95,15 +115,16 @@ RVM16 和这套 RVV 改造共用的是方法论：标准编码不动、只加新
 
 ## 七、还没做完的
 
-- Expand16：目前有一个独立翻译器原型，能把 clang 的小整数函数展开成 Q3（f(3,4)=59，以及数组求和的循环 sum=10，都已在 Spike 上验证）；LLVM post-RA pass 还没接；
-- CoreMark/Dhrystone 的 code size 对比；
-- FP 反汇编、Q3 的 SYS 块（M/CSR 已完成）；
-- base 寄存器顺序、load/store 偏移单位这些 PoC 细节；
-- Spike/LLVM 的补丁整理成可提交的 patch。
+- Expand16：独立翻译器原型已支持 leaf、循环、load/store、函数调用、栈帧、ra 保存和 li32 常量；f(3,4)=59、sum=10、fir=70、带栈帧的 call f=14 都在 Spike 上验证过。LLVM post-RA pass 还没接；
+- CoreMark/Dhrystone 的 code size 对比（目前只有手写内核和三个 C 函数）；
+- base 寄存器顺序（0=fp/1=dp/2=sp/3=gp）、load/store offset 单位这些 PoC 细节；
+- Spike/LLVM 的补丁整理成可提交的 patch；
+- GitHub 远程仓库：本地仓库已组装，push 需要先建 miloee/rvm16 或提供 token。
 
 ## 八、代码与文档
 
-- 指令集手册：rva-e/docs/RVA-E16-ISA-Manual.md
+- 指令集手册（AsciiDoc，RISC-V 官方风格）：rva-e/docs/RVM16-ISA-Manual.adoc
+- HTML 预览：rva-e/docs/RVM16-ISA-Manual.html
 - Q3 分配：rva-e/docs/RVA-E16-Q3-Allocation.md
 - LLVM 补丁：rva-e/patches/llvm/0002-RISCV-Q3-MC.patch
 - 状态与已知问题：rva-e/docs/Q3-Vertical-Slice-Status.md

@@ -440,7 +440,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>The RVM16 Instruction Set Manual</h1>
 <div class="details">
 <span id="author" class="author">The RVM16 Authors</span><br>
-<span id="revnumber">version 0.4,</span>
+<span id="revnumber">version 0.5,</span>
 <span id="revdate">2026-11-18</span>
 </div>
 <div id="toc" class="toc2">
@@ -541,6 +541,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li><a href="#_appendix_a_instruction_summary">Appendix A. Instruction Summary</a></li>
 <li><a href="#_appendix_b_revision_history">Appendix B. Revision History</a></li>
+<li><a href="#_appendix_c_code_size_measurements_non_normative">Appendix C. Code Size Measurements (Non-Normative)</a>
+<ul class="sectlevel2">
+<li><a href="#_c_1_hand_written_kernels">C.1 Hand-written kernels</a></li>
+<li><a href="#_c_2_c_functions_naive_expand16">C.2 C functions, naive Expand16</a></li>
+<li><a href="#_c_3_c_functions_pointers_in_s0s1">C.3 C functions, pointers in s0/s1</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -746,7 +753,10 @@ mode and virtual memory are outside the scope of this volume.</p>
 <h3 id="_3_1_instruction_length">3.1 Instruction length</h3>
 <div class="paragraph">
 <p>Every instruction is 16 bits.  The two least-significant bits select the
-quadrant.  Quadrants 00, 01, and 10 are RVC.  Quadrant 11 is Q3.</p>
+quadrant.  Quadrants 00, 01, and 10 are RVC.  Quadrant 11 is Q3.  The name Q3
+means quadrant 3 of the 2-bit quadrant field; standard RISC-V uses this
+quadrant as the 32-bit instruction escape, while RVM16 redefines it as a
+16-bit space.</p>
 </div>
 </div>
 <div class="sect2">
@@ -1255,11 +1265,13 @@ immediate, and writes the result to rd.  rd is x0-x15.</p>
 <div class="sect2">
 <h3 id="_5_4_load_and_store_format">5.4 Load and store format</h3>
 <div class="paragraph">
-<p>Loads and stores use f4 = 7 or 8, a 2-bit funct2 in bits 11:10, a 3-bit
-register field in bits 9:7 (encoding x8-x15), a 2-bit base selector in bits
-6:5, a 3-bit offset field in bits 4:2, and 0b11.  The base selector encodes
+<p>Loads and stores use f4 = 7 or 8, a 2-bit funct2 in bits 11:10, a 4-bit
+register field in bits 9:6 (encoding x0-x15), a 2-bit base selector in bits
+5:4, a 2-bit offset field in bits 3:2, and 0b11.  The base selector encodes
 0 = fp (x8), 1 = dp (x9), 2 = sp (x2), 3 = gp (x3).  The offset is scaled by
-the access size.</p>
+the access size, giving a 4-byte window for word accesses.  The 4-bit
+register field includes ra (x1), so a non-leaf function can spill and
+reload its return address.</p>
 </div>
 <table class="tableblock frame-all grid-all fit-content">
 <colgroup>
@@ -1329,7 +1341,7 @@ the access size.</p>
 </div>
 <div class="paragraph">
 <p>Description: Loads a 32-bit word from the address base + off*4 and writes it
-to rd.  rd is x8-x15; base is fp, dp, sp, or gp.</p>
+to rd.  rd is x0-x15; base is fp, dp, sp, or gp.</p>
 </div>
 <div class="paragraph">
 <p>Operation:</p>
@@ -1356,15 +1368,15 @@ rd = MEM[addr, 4]</code></pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">15:12</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">11:10</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">9:7</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">6:5</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">4:2</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">9:6</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">5:4</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">3:2</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">1:0</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">0b0111</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">0b10</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">rd'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rd</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">base</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">off</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">0b11</p></td>
@@ -1840,7 +1852,7 @@ for argument passing or allocation.</p>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">7-8</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">LD/ST</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">funct2 at 11:10, reg' at 9:7, base at 6:5, off at 4:2</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">funct2 at 11:10, reg[4] at 9:6, base at 5:4, off[2] at 3:2</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">9-13</p></td>
@@ -2029,15 +2041,156 @@ for argument passing or allocation.</p>
 <td class="tableblock halign-left valign-top"><p class="tableblock">0.4</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Official-style AsciiDoc manual; SYS block; FS semantics</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">0.5</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">LD/ST 4-bit registers; full Q3 disassembly; code-size appendix</p></td>
+</tr>
 </tbody>
 </table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_appendix_c_code_size_measurements_non_normative">Appendix C. Code Size Measurements (Non-Normative)</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Code sizes are .text bytes.  RV32IMAF_C was assembled with
+llvm-mc -mattr=+c,+m,+f; RVM16 with +m,+c,+zcb,+zc16q3.  The C rows use
+clang -O2 and the standalone Expand16 prototype, which is not an optimizing
+compiler.</p>
+</div>
+<div class="sect2">
+<h3 id="_c_1_hand_written_kernels">C.1 Hand-written kernels</h3>
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Kernel</th>
+<th class="tableblock halign-left valign-top">RV32IMAF_C</th>
+<th class="tableblock halign-left valign-top">RVM16</th>
+<th class="tableblock halign-left valign-top">Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ALU + exit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">42</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">30</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-28.6%</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">F32 add/convert + exit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">48</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">42</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-12.5%</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">F32 load/store/sqrt + exit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">62</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">56</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-9.7%</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Both sides include the mstatus.FS initialization (csrs on RV32, c.csrw on
+RVM16).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_c_2_c_functions_naive_expand16">C.2 C functions, naive Expand16</h3>
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Function</th>
+<th class="tableblock halign-left valign-top">RV32IMAF_C</th>
+<th class="tableblock halign-left valign-top">RVM16</th>
+<th class="tableblock halign-left valign-top">Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fir (loop, two loads, mul)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">38</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">+18.8%</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sum (loop, one load)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">24</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">30</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">+25.0%</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">call (add + f, stack/ra)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">24</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">18</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-25.0%</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_c_3_c_functions_pointers_in_s0s1">C.3 C functions, pointers in s0/s1</h3>
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Function</th>
+<th class="tableblock halign-left valign-top">RV32IMAF_C</th>
+<th class="tableblock halign-left valign-top">RVM16</th>
+<th class="tableblock halign-left valign-top">Delta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fir</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">34</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">+6.3%</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sum</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">24</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">28</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">+16.7%</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>The naive expansion pays for a c.mv before each load whose base is not one
+of the Q3 base registers, for the two-address form of three-address ALU
+operations, and for compare-plus-branch sequences because Q3 has no flags.
+Keeping pointers in s0/s1 removes most of the load-side moves, but the
+conditional-branch cost remains.  A Q3 two-register conditional branch
+(c.bne rs1', rs2', off, 2 bytes) would change the fir loop from 34 to about
+30 bytes.  These results are the main argument that a strict 16-bit ISA
+needs compiler and ISA co-design; strict width alone is not a code-size
+win for pointer- and branch-heavy C.</p>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 0.4<br>
-Last updated 2026-11-18 15:52:52 +0800
+Version 0.5<br>
+Last updated 2026-11-18 16:13:37 +0800
 </div>
 </div>
 </body>
