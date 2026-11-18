@@ -600,14 +600,15 @@ explicitly because Spike's boot ROM contains 32-bit code.
 
 ### 12.3 C to Q3 prototype
 
-A standalone translator (tools/expand16.py) turns clang -O2 leaf-function
-assembly into Q3.  For
+A standalone translator (tools/expand16.py) turns clang -O2 small-integer-
+function assembly into Q3.  For
 
     int f(int a, int b) { return (a << b) + (a * b) - (a < b); }
 
-the result f(3,4) = 59 runs on Spike (RC=0).  This is not the LLVM post-RA
-pass; branches, loads/stores, and stack frames are not supported yet.  All
-values must be in x8-x15 because Q3/RVC add/sub/mv cannot encode x16-x31.
+the result f(3,4) = 59 runs on Spike (RC=0).  A sum loop over 1,2,3,4 also
+returns 10.  This is not the LLVM post-RA pass; calls, stack frames, and large
+offsets are not supported yet (simple branches and word loads/stores are).
+All values must be in x8-x15 because Q3/RVC add/sub/mv cannot encode x16-x31.
 
 ### 12.4 Comparison with RV32E / RV32EC + Zc*
 
