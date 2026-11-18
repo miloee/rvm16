@@ -62,6 +62,20 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 
 模型不是编译器：actual 列已用 assemble 后的 .text 校准到 Dhrystone 2508；CoreMark actual 列直接取 clang 对象 .text，模型对 CoreMark 的指令尺寸仍有约 11% 高估，所以 CoreMark 的数字只作趋势参考。
 
+### 2.4 LLVM 状态
+
+- Spike-C 已支持 C 核心（ALU、分支、LD/ST、GP/PC）；
+- LLVM C MC 原型尝试过（+zvmc、distinct mnemonics、uimm 分支偏移），TableGen/operand 枚举问题未解决，已从构建中回退；
+- A 的 +zc16q3 LLVM MC 仍可用（c.sll 编码 0x052f）；
+- 当前 C 测试用 Python 生成 .2byte，不是完整 LLVM 后端。
+
+## 6. 有界结论（当前）
+
+- C 在 Dhrystone 模型上比 RV32EC+Zc* 小 17-22%；CoreMark 约持平（+2.1%，模型误差 ±5-10%）。
+- 这不是全局最优证明：只比较了 C 与 RV32EC，没有 MILP 下界，也没有把 A/B 全量跑完。
+- 能说的有界结论是：**在 16 GPR、2-address 为主、3 个融合分支、GP/PC-relative、RVC 不变的约束下，C 是已评估方案中对 Dhrystone 最好的；CoreMark 没有优势。**
+- 真正的“最优”还需要 MILP + 指令频率，这是下一步。
+
 ## 3. 待补指标
 
 ### 3.1 Spill 率
