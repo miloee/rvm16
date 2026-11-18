@@ -64,10 +64,10 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 
 ### 2.4 LLVM 状态
 
-- Spike-C 已支持 C 核心（ALU、分支、LD/ST、GP/PC）；
-- LLVM C MC 原型尝试过（+zvmc、distinct mnemonics、uimm 分支偏移），TableGen/operand 枚举问题未解决，已从构建中回退；
-- A 的 +zc16q3 LLVM MC 仍可用（c.sll 编码 0x052f）；
-- 当前 C 测试用 Python 生成 .2byte，不是完整 LLVM 后端。
+- LLVM C MC 已实现，挂在 +zc16q3 下，用 distinct mnemonics（c.addc/c.bnec/c.lwgc/...）；
+- FIR/sum 由 llvm-mc 汇编，函数 26/20 B，Spike-C 运行 x8=70/10；
+- 分支偏移目前是 raw uimm4/uimm7，没有 label fixup；LD/ST 语法是 c.lwc rd, off, base；
+- A 的 +zc16q3 仍可用（c.sll 编码 0x052f）。
 
 ## 6. 有界结论（当前）
 

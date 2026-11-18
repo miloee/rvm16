@@ -258,5 +258,6 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 ## 19. 当前状态
 
 - 本文档：编码/ABI/验证计划草案；
-- Spike/LLVM：尚未实现 C，现有实现是 A；
-- 下一步：先做 C 的 Spike + LLVM MC 原型，跑 FIR/sum/index 循环，再决定是否投入 ABI/编译器。
+- Spike-C：ALU-12、bne/blt/blez、GP/PC、LD/ST 已实现；FIR/sum 26/20，x8=70/10；
+- LLVM C MC：挂在 +zc16q3 下，distinct mnemonics；分支偏移是 raw uimm，尚无 label fixup；
+- 下一步：Dhrystone/CoreMark 的 MILP 下界、label fixup、完整 ABI/编译器。
