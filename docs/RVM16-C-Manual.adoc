@@ -344,6 +344,32 @@ A full compiler needs:
 Until those exist, benchmark comparisons involving RVM16-C are model-based,
 not compiled binaries.
 
+== 19. Encoding Coexistence and Conflict Rules
+
+RVM16-C avoids encoding conflicts by construction:
+
+[%autowidth,options="header"]
+|===
+| Region | Used by | Rule
+| quadrant 00/01/10 | C v2.0, Zcb, Zcmp, Zcmt, Zcf | inherit standard encodings; never redefine a used pattern
+| quadrant 11 | Q3 | all new RVM16-C instructions; no RVC instruction uses this quadrant
+| Zcmp rlist | quadrant 10 reserved | x8-x15 only (s0-s7); s8-s11 do not exist
+| Zcmt | quadrant 10 reserved | jvt table; cm.jt 0-31, cm.jalt 32-255
+| Zcf | quadrant 00/10 reserved | f8-f15; FLEN=32
+| Zcd | none | requires D/FLEN=64, not applicable
+|===
+
+Rules:
+
+1. A used RVC/C v2.0 encoding is never redefined.
+2. Zcb/Zcmp/Zcmt/Zcf use only their standard reserved RVC encodings.
+3. Q3 uses quadrant 11 only; all 16 f4 blocks are disjoint.
+4. With 16 GPR, any RVC or Zcmp form naming x16-x31 or s8-s11 is illegal.
+5. The assembler uses distinct Q3 mnemonics (c.addc, c.bnec, c.lwc, ...) so
+   Q3 and RVC mnemonics cannot be confused.
+6. Zcf compressed FP loads/stores use f8-f15; Zcd is excluded because the ISA
+   is F32-only.
+
 == Appendix A. Revision History
 
 [%autowidth,options="header"]

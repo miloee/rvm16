@@ -476,6 +476,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_16_profiles">16. Profiles</a></li>
 <li><a href="#_17_benchmark_methodology_and_status">17. Benchmark Methodology and Status</a></li>
 <li><a href="#_18_compiler_and_abi_gap">18. Compiler and ABI Gap</a></li>
+<li><a href="#_19_encoding_coexistence_and_conflict_rules">19. Encoding Coexistence and Conflict Rules</a></li>
 <li><a href="#_appendix_a_revision_history">Appendix A. Revision History</a></li>
 </ul>
 </div>
@@ -553,7 +554,12 @@ prologue/epilogue;</p>
 <p>Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;</p>
 </li>
 <li>
-<p>Zcmt is optional: cm.jt/cm.jalt for switch tables;</p>
+<p>Zcmt is optional for M/F profiles, mandatory for the RVM16-C-E (Zce)
+profile: cm.jt index 0-31, cm.jalt index 32-255, using the jvt CSR;</p>
+</li>
+<li>
+<p>Zcd requires D/FLEN=64; RVM16-C is F32-only, so c.fld/c.fsd are not
+applicable.  Adding D would change the F32-only premise and the FP ABI.</p>
 </li>
 <li>
 <p>RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.</p>
@@ -1098,6 +1104,10 @@ method and caveats.</p>
 <p>Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.</p>
 </li>
 <li>
+<p>Zcmt: cm.jt 0-31 / cm.jalt 32-255 encodings verified with +zcmt;
+runtime needs jvt and a table, not tested.</p>
+</li>
+<li>
 <p>LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
 assemble and run.</p>
 </li>
@@ -1221,6 +1231,11 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.</p>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, F, C v2.0, Zcb, Zcmp, Zcf</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-E</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I, M, C v2.0, Zcb, Zcmp, Zcmt</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcf optional</p></td>
+</tr>
 </tbody>
 </table>
 <div class="paragraph">
@@ -1245,7 +1260,8 @@ allocate FP temporaries there when possible.</p>
 core_util.c);</p>
 </li>
 <li>
-<p>Linpack C (linpackc.new, not built yet).</p>
+<p>Linpack C (linpackc.new).  The default source is double precision; RVM16-C
+has only F32, so a single-precision port is required.  Not built.</p>
 </li>
 </ul>
 </div>
@@ -1345,6 +1361,87 @@ not compiled binaries.</p>
 </div>
 </div>
 <div class="sect1">
+<h2 id="_19_encoding_coexistence_and_conflict_rules">19. Encoding Coexistence and Conflict Rules</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>RVM16-C avoids encoding conflicts by construction:</p>
+</div>
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Region</th>
+<th class="tableblock halign-left valign-top">Used by</th>
+<th class="tableblock halign-left valign-top">Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 00/01/10</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">C v2.0, Zcb, Zcmp, Zcmt, Zcf</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">inherit standard encodings; never redefine a used pattern</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 11</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Q3</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">all new RVM16-C instructions; no RVC instruction uses this quadrant</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmp rlist</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 10 reserved</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">x8-x15 only (s0-s7); s8-s11 do not exist</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 10 reserved</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">jvt table; cm.jt 0-31, cm.jalt 32-255</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcf</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 00/10 reserved</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">f8-f15; FLEN=32</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcd</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">requires D/FLEN=64, not applicable</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Rules:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>A used RVC/C v2.0 encoding is never redefined.</p>
+</li>
+<li>
+<p>Zcb/Zcmp/Zcmt/Zcf use only their standard reserved RVC encodings.</p>
+</li>
+<li>
+<p>Q3 uses quadrant 11 only; all 16 f4 blocks are disjoint.</p>
+</li>
+<li>
+<p>With 16 GPR, any RVC or Zcmp form naming x16-x31 or s8-s11 is illegal.</p>
+</li>
+<li>
+<p>The assembler uses distinct Q3 mnemonics (c.addc, c.bnec, c.lwc, &#8230;&#8203;) so
+Q3 and RVC mnemonics cannot be confused.</p>
+</li>
+<li>
+<p>Zcf compressed FP loads/stores use f8-f15; Zcd is excluded because the ISA
+is F32-only.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
 <h2 id="_appendix_a_revision_history">Appendix A. Revision History</h2>
 <div class="sectionbody">
 <table class="tableblock frame-all grid-all fit-content">
@@ -1371,7 +1468,7 @@ not compiled binaries.</p>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2026-11-18 20:26:21 +0800
+Last updated 2026-11-18 20:31:06 +0800
 </div>
 </div>
 </body>
