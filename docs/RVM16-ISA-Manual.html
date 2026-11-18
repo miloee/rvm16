@@ -1807,11 +1807,21 @@ the standard RISC-V cause codes.</p>
 <h2 id="_11_abi">11. ABI</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>RVM16 uses ILP32F.  Integer arguments are passed in a0-a7 (x10-x17); F32
-arguments are passed in f0-f7.  Integer return values are in a0 and a1; F32
-returns are in f0.  s0-s11 and f8-f15 are callee-saved.  The stack pointer is
-sp (x2) and shall be 16-byte aligned.  x31 is reserved and shall not be used
-for argument passing or allocation.</p>
+<p>RVM16 uses ILP32F with a pointer-register extension.  The first two pointer
+arguments are passed in s0 (x8) and s1 (x9); remaining integer and pointer
+arguments are passed in a0-a7 (x10-x17).  F32 arguments are passed in f0-f7.
+Integer or pointer returns are in a0; F32 returns are in f0.  s0 and s1 are
+caller-saved argument registers in this ABI; s2-s11 and f8-f15 are
+callee-saved.  A variadic or unprototyped call passes all integer and pointer
+arguments in a0-a7, so a callee without a prototype sees the standard
+sequence.  The stack pointer is sp (x2) and shall be 16-byte aligned.  x31 is
+reserved and shall not be used for argument passing or allocation.</p>
+</div>
+<div class="paragraph">
+<p>The pointer-register convention is what makes the s0/s1 code-size result in
+Appendix C possible: a pointer argument arrives in a Q3 base register, so a
+load does not need a c.mv first.  A standard a0-a7 ABI would require those
+copies at every use.</p>
 </div>
 </div>
 </div>
@@ -2191,7 +2201,7 @@ code-size win for pointer- and branch-heavy C.</p>
 <div id="footer">
 <div id="footer-text">
 Version 0.5<br>
-Last updated 2026-11-18 16:22:14 +0800
+Last updated 2026-11-18 16:26:50 +0800
 </div>
 </div>
 </body>

@@ -102,10 +102,12 @@ the two spare bits, so the five FP blocks are unchanged.
 - int/pointer/long are 32 bits, 4-byte aligned; the stack is 16-byte aligned.
 - F32 arguments and returns use f0-f7 (caller-saved); f8-f15 are
   callee-saved.
-- Integer arguments use x10-x15, returns x10-x11; x8/x9 are callee-saved;
-  x31 is reserved and never allocated.
-- Variadic calls pass integer arguments in x10-x15 and FP arguments in
-  f0-f7.  Code uses only f0-f15; f16-f31 are outside the Q3 ISA.
+- The first two pointer arguments use s0/x8 and s1/x9; remaining integer and
+  pointer arguments use x10-x17.  Returns are in x10/x11; s0/s1 are
+  caller-saved argument registers, s2-s11 are callee-saved; x31 is reserved.
+- Variadic or unprototyped calls pass all integer/pointer arguments in
+  x10-x15, so the callee sees the standard sequence.  Code uses only f0-f15;
+  f16-f31 are outside the Q3 ISA.
 
 ## 3. Encoding Framework
 

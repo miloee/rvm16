@@ -61,7 +61,7 @@ RV32 侧用 llvm-mc -mattr=+c,+m,+f，Q3 侧用 +m,+c,+zcb,+zc16q3，取 .text�
 | sum（循环、1 个 load） | 24 B | 30 B | +25.0% |
 | call（add + f，栈/ra） | 24 B | 18 B | -25.0% |
 
-### 优化后（指针常驻 s0/s1，去掉每条 load 前的 c.mv）
+### RVM16 pointer ABI（前两个指针参数走 s0/s1）
 
 | C 函数 | RV32IMAF_C | RVM16 | 变化 |
 |---|---:|---:|---:|
@@ -72,7 +72,7 @@ RV32 侧用 llvm-mc -mattr=+c,+m,+f，Q3 侧用 +m,+c,+zcb,+zc16q3，取 .text�
 
 - 纯 ALU 和 call/stack 收益最大：32 位的 sll/mul 变成单条 Q3，prologue/epilogue 用 RVC 的 c.sw/c.lw；
 - 指针/循环密集的 fir/sum，naive 展开反而变大：每条 load 前要 c.mv s0, a0，三地址运算要 mv，条件分支要 compare+branch；
-- 把指针常驻 s0/s1 后，fir 从 +18.8% 收到 +6.3%，sum 从 +25% 收到 +16.7%；但还没有转正；
+- 把前两个指针参数直接放进 s0/s1（RVM16 的 pointer ABI）后，fir 从 +18.8% 收到 +6.3%，sum 从 +25% 收到 +16.7%；但还没有转正；如果沿用标准 a0-a7 传参，只在入口补 mv，收益会被入口 move 抵消，回到 naive 的数字；
 - 关键瓶颈是**没有 flags、也没有双寄存器条件分支**：一条 bne 要展开成 mv+xor+bnez（6 B），而 RV32 的 bne 是 4 B。如果加一个融合的比较分支，理论上 fir 能到 30 B；但 16 位里两个 3-bit 寄存器 + 偏移只剩约 4 bit（±16 B），FIR 循环体 18 B 放不下，需要 trampoline 或更长的分支编码——所以这不是免费的。
 
 所以严格 16 位不是“免费的 code size 优化”，它需要编译器和 ISA 协同设计。这个结论比单看 best case 更重要。

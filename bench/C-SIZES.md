@@ -10,8 +10,9 @@ post-RA pass).  Sizes are .text bytes for the function body.
 | sum (loop, 1 load) | 24 | 30 | +25.0% |
 | call (add + f, stack/ra) | 24 | 18 | -25.0% |
 
-Optimized variant (pointers kept in s0/s1, which requires the caller to pass
-pointer arguments in the Q3 base registers):
+RVM16 pointer ABI (the first two pointer arguments arrive in s0/s1, so the
+base registers are populated by the calling convention rather than by an
+entry copy):
 
 | Function | RV32IMAF_C | RVM16 (s0/s1 ABI) | Delta |
 |---|---:|---:|---:|
