@@ -203,6 +203,13 @@ riscv_insn_ext_c = \
 	c_lw_q3 \
 	c_sw_q3 \
 	c_sw_c \
+	c_remu_c \
+	c_rem_c \
+	c_divu_c \
+	c_div_c \
+	c_mulhu_c \
+	c_mulhsu_c \
+	c_mulh_c \
 	c_sltu_c \
 	c_slt_c \
 	c_sra_c \
