@@ -130,9 +130,18 @@ def expand(op, rest):
     check(rd); check(rs1); check(rs2)
     out = []
     if op in ("sll", "mul"):
-        if rd != rs1:
+        if rd == rs1:
+            out.append("  c.%s %s, %s" % (op, rd, rs2))
+        elif rd == rs2:
+            if op == "mul":
+                out.append("  c.mul %s, %s" % (rd, rs1))
+            else:
+                t = pick_temp({rd, rs1, rs2})
+                out += mv(t, rs2) + mv(rd, rs1)
+                out.append("  c.sll %s, %s" % (rd, t))
+        else:
             out += mv(rd, rs1)
-        out.append("  c.%s %s, %s" % (op, rd, rs2))
+            out.append("  c.%s %s, %s" % (op, rd, rs2))
     elif op == "add":
         if rd == rs1:
             out.append("  c.add %s, %s" % (rd, rs2))
@@ -142,9 +151,15 @@ def expand(op, rest):
             out += mv(rd, rs1)
             out.append("  c.add %s, %s" % (rd, rs2))
     elif op == "slt":
-        if rd != rs1:
+        if rd == rs1:
+            out.append("  c.slt %s, %s" % (rd, rs2))
+        elif rd == rs2:
+            t = pick_temp({rd, rs1, rs2})
+            out += mv(t, rs2) + mv(rd, rs1)
+            out.append("  c.slt %s, %s" % (rd, t))
+        else:
             out += mv(rd, rs1)
-        out.append("  c.slt %s, %s" % (rd, rs2))
+            out.append("  c.slt %s, %s" % (rd, rs2))
     elif op == "sub":
         if rd == rs1:
             out.append("  c.sub %s, %s" % (rd, rs2))
