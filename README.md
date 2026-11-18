@@ -65,7 +65,8 @@ See [bench/README.md](bench/README.md) for sources and commands.
 
 ## Documentation
 
-- [ISA manual](docs/RVA-E16-ISA-Manual.md)
+- [ISA manual (AsciiDoc, RISC-V manual style)](docs/RVM16-ISA-Manual.adoc)
+- [Working Markdown notes](docs/RVA-E16-ISA-Manual.md)
 - [Q3 allocation](docs/RVA-E16-Q3-Allocation.md)
 - [RVM16 vs RV32E](docs/RVM16-vs-RV32E.md)
 - [Vertical slice status](docs/Q3-Vertical-Slice-Status.md)

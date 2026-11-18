@@ -4,11 +4,18 @@
 
 | Document | What it covers |
 |---|---|
-| RVA-E16-ISA-Manual.md | Draft 0.3 ISA manual: encodings, ABI, toolchain, examples |
+| RVM16-ISA-Manual.adoc | Normative manual, AsciiDoc book in RISC-V manual style (draft 0.4) |
+| RVA-E16-ISA-Manual.md | Working Markdown notes; the .adoc is the normative text |
 | RVA-E16-Q3-Allocation.md | 16-block Q3 allocation and field budgets |
 | RVM16-vs-RV32E.md | Comparison with RV32E / RV32EC+Zc* |
 | Q3-Vertical-Slice-Status.md | What works, what is broken, known issues |
 | Zhihu-Article.md | Promotional article draft |
+
+Build the HTML manual with:
+
+    ./build.sh
+
+This requires asciidoctor; the .adoc source is the deliverable.
 
 ## Design notes
 

@@ -1,0 +1,614 @@
+= The RVM16 Instruction Set Manual
+:doctype: book
+:revnumber: 0.4
+:revdate: 2026-11-18
+:author: The RVM16 Authors
+:toc: left
+:toclevels: 3
+:icons: font
+:attribute-missing: warn
+
+[preface]
+== Preface
+
+This manual specifies RVM16, a strict 16-bit RISC-V instruction set for
+embedded systems.  It is a proposal and a research prototype, not a ratified
+RISC-V International specification.
+
+RVM16 keeps the standard RVC encodings in quadrants 00, 01, and 10 unchanged,
+and reuses quadrant 11, which the standard ISA reserves for 32-bit
+instructions, as a new 16-bit extension space called Q3.  Every instruction is
+16 bits wide.  There are no 32-bit instruction encodings.
+
+The manual follows the structure and conventions of the RISC-V Instruction
+Set Manual: a normative programming model, extension chapters, instruction
+descriptions with encoding tables, and an opcode map.
+
+=== Intended audience
+
+This document is for architects, compiler and simulator developers, and
+embedded system designers who need to evaluate or implement RVM16.
+
+=== Sources
+
+The RVC encodings are inherited from the RISC-V C extension.  The Q3 formats
+were designed for this proposal.  The F32 subset follows the RISC-V F
+extension semantics where applicable, with two-address forms.
+
+== Document Conventions
+
+=== Bit notation
+
+Instruction fields are written as instruction[hi:lo], with bit 15 the most
+significant bit of the 16-bit instruction word.  The prefix 0b denotes a
+binary literal.  The two least-significant bits of every Q3 instruction are
+0b11.
+
+=== Register notation
+
+Integer registers are x0-x31; the ABI names zero, ra, sp, gp, tp, t0-t6,
+s0-s11, and a0-a7 are used in examples.  Floating-point registers are f0-f15
+in Q3; f16-f31 are outside the Q3 encoding.  x31 is reserved as an expansion
+scratch register and shall not be allocated by compilers.
+
+=== Normative language
+
+The key words shall, shall not, should, should not, and may are to be
+interpreted as described in RFC 2119.
+
+== 1. Introduction
+
+=== 1.1 Motivation
+
+Code size is a first-order constraint in embedded systems.  RVC compresses
+common instructions to 16 bits, but a program that contains any
+uncompressible 32-bit instruction still fetches four bytes for that
+instruction.  RVM16 removes the 32-bit encoding entirely: the instruction
+stream is a sequence of 16-bit parcels, and a 32-bit operation is assembled
+from one or two parcels.
+
+=== 1.2 Scope
+
+RVM16 is a 32-bit data-path ISA with 32 general-purpose registers, a mandatory
+F32 floating-point unit, and a 16-bit instruction encoding.  This volume
+specifies the base integer instructions, the M extension, the F extension,
+CSRs, and machine-mode system instructions.  The A extension is reserved for a
+future revision.
+
+=== 1.3 Compatibility
+
+RVM16 is encoding-compatible with RVC: every RVC instruction in quadrants 00,
+01, and 10 keeps its standard encoding.  It is not binary-compatible with
+RV32IMAF_C programs that contain 32-bit instructions; such programs must be
+recompiled.  The ABI is ILP32F.
+
+=== 1.4 Naming
+
+RVM16 is a working name.  Alternative names considered were RVM32E16, RV16E,
+and RVA-E16.  The name does not imply an existing RISC-V profile family.
+
+== 2. Programming Model
+
+=== 2.1 Registers
+
+[%autowidth,options="header"]
+|===
+| Register | Width | Description
+| x0 | 32 | Hardwired zero
+| x1-x30 | 32 | General-purpose registers
+| x31 | 32 | Reserved expansion scratch; not allocatable
+| f0-f15 | 32 | Q3 floating-point registers
+| f16-f31 | 32 | Present in the register file; not addressable by Q3
+| pc | 32 | Program counter, 2-byte aligned
+| fcsr | 32 | Floating-point control and status
+|===
+
+The ABI uses ILP32F: 32-bit pointers, F32 arguments and returns in f0-f7,
+f8-f15 callee-saved, and a 16-byte aligned stack.
+
+=== 2.2 Memory
+
+Memory is little-endian.  Loads and stores support byte, halfword, and word
+accesses.  Word accesses shall be naturally aligned.  Misaligned accesses may
+raise a load or store address-misaligned exception.
+
+=== 2.3 Instruction alignment
+
+Every instruction is 2 bytes.  Branch and jump targets shall be 2-byte
+aligned.  A target with bit 0 set raises an instruction-address-misaligned
+exception.
+
+=== 2.4 Privilege
+
+RVM16 supports machine mode (M), and may support user mode (U).  Supervisor
+mode and virtual memory are outside the scope of this volume.
+
+== 3. Encoding Framework
+
+=== 3.1 Instruction length
+
+Every instruction is 16 bits.  The two least-significant bits select the
+quadrant.  Quadrants 00, 01, and 10 are RVC.  Quadrant 11 is Q3.
+
+=== 3.2 Q3 block map
+
+Q3 has a 4-bit block selector f4 = instruction[15:12], giving 16 blocks of
+1,024 encodings each (a 10-bit payload in instruction[11:2]).
+
+[%autowidth,options="header"]
+|===
+| f4 | Block | Operations
+| 0 | CR3 | C.SLL
+| 1 | CR3 | C.SRL
+| 2 | CR3 | C.SRA
+| 3 | CR3 | C.SLT
+| 4 | CR3 | C.SLTU
+| 5 | CA3 | C.MULH, C.MULHSU, C.MULHU, C.DIV, C.DIVU, C.REM, C.REMU
+| 6 | CI3 | C.XORI, C.ORI, C.SLTI, C.SLTIU
+| 7 | LD/ST | C.LB, C.LH, C.LW, C.LBU
+| 8 | LD/ST | C.LHU, C.SB, C.SH, C.SW
+| 9 | FP | C.FADD.S, C.FSUB.S, C.FMUL.S, C.FDIV.S
+| 10 | FP | C.FSQRT.S, C.FMIN.S, C.FMAX.S, C.FSGNJ.S
+| 11 | FP | C.FSGNJN.S, C.FSGNJX.S, C.FEQ.S, C.FLT.S
+| 12 | FP | C.FLE.S, C.FCVT.S.W, C.FCVT.W.S, C.FCLASS.S
+| 13 | FP | C.FMV.X.W, C.FMV.W.X, C.FLW, C.FSW
+| 14 | CSR | C.CSRR, C.CSRW, C.CSRS, C.CSRC
+| 15 | SYS | C.ECALL, C.EBREAK, C.MRET, C.WFI, C.FENCE, C.FENCE.I
+|===
+
+=== 3.3 Field notation
+
+A Q3 encoding is written as (f4 << 12) OR payload OR 0b11, where payload
+occupies bits 11:2.  The payload layout depends on the block.  Registers in
+3-bit fields are x8-x15; 4-bit fields are x0-x15; 5-bit fields are x0-x31.
+
+== 4. Base Integer Instructions
+
+=== 4.1 RVC inheritance
+
+The RVC instructions in quadrants 00, 01, and 10 are unchanged.  Compilers may
+use c.li, c.lui, c.addi, c.andi, c.slli, c.srli, c.srai, c.add, c.sub, c.and,
+c.or, c.xor, c.mv, c.lw, c.sw, c.lwsp, c.swsp, c.beqz, c.bnez, c.j, c.jal,
+c.jr, c.jalr, c.nop, and c.ebreak with their standard encodings.
+
+=== 4.2 Two-address execution model
+
+Q3 integer ALU instructions are two-address: the destination is also the
+first source.  A three-address operation rd = rs1 op rs2 is assembled as a
+copy rd = rs1 followed by the Q3 operation on rd and rs2, or by a sequence of
+RVC instructions when the registers fit the RVC x8-x15 fields.  The compiler
+is responsible for this expansion.
+
+== 5. Q3 Integer Instructions
+
+=== 5.1 CR3 format
+
+CR3 uses f4 to select one operation per block; bits 11:7 are rd (5 bits), bits
+6:2 are rs2 (5 bits), and bits 1:0 are 0b11.
+
+[%autowidth,options="header"]
+|===
+| f4 | Mnemonic | Operation
+| 0 | C.SLL rd, rs2 | rd = rd << (rs2[4:0])
+| 1 | C.SRL rd, rs2 | rd = rd >> (rs2[4:0]), zero fill
+| 2 | C.SRA rd, rs2 | rd = rd >> (rs2[4:0]), sign fill
+| 3 | C.SLT rd, rs2 | rd = (signed rd < signed rs2)
+| 4 | C.SLTU rd, rs2 | rd = (unsigned rd < unsigned rs2)
+|===
+
+[[insn-c-sll]]
+==== C.SLL
+
+Synopsis:
+
+[source]
+----
+c.sll rd, rs2
+----
+
+Description: Shifts rd left by the low five bits of rs2.  Bits shifted out are
+discarded; zero bits are shifted in.  The operation is two-address.
+
+Operation:
+
+[source]
+----
+rd = rd << (rs2 & 0x1f)
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:7 |6:2 |1:0
+|0b0000 |rd |rs2 |0b11
+|===
+
+[[insn-c-slt]]
+==== C.SLT
+
+Synopsis:
+
+[source]
+----
+c.slt rd, rs2
+----
+
+Description: Writes 1 to rd if the signed value of rd is less than the signed
+value of rs2, and 0 otherwise.  The comparison observes the original rd value
+before the write.
+
+Operation:
+
+[source]
+----
+rd = (signed(rd) < signed(rs2)) ? 1 : 0
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:7 |6:2 |1:0
+|0b0011 |rd |rs2 |0b11
+|===
+
+=== 5.2 CA3 format (M extension)
+
+CA3 uses f4 = 5, a 3-bit funct3 in bits 11:9, a 3-bit rd' in bits 8:6, a 3-bit
+rs2' in bits 5:3, a reserved bit 2 that shall be zero, and 0b11.  rd' and rs2'
+encode x8-x15.
+
+[%autowidth,options="header"]
+|===
+| funct3 | Mnemonic | Operation
+| 000 | reserved | C.MUL is the Zcb instruction, not Q3
+| 001 | C.MULH rd, rs2 | High 32 bits of signed x signed
+| 010 | C.MULHSU rd, rs2 | High 32 bits of signed x unsigned
+| 011 | C.MULHU rd, rs2 | High 32 bits of unsigned x unsigned
+| 100 | C.DIV rd, rs2 | Signed division
+| 101 | C.DIVU rd, rs2 | Unsigned division
+| 110 | C.REM rd, rs2 | Signed remainder
+| 111 | C.REMU rd, rs2 | Unsigned remainder
+|===
+
+[[insn-c-mulh]]
+==== C.MULH
+
+Synopsis:
+
+[source]
+----
+c.mulh rd, rs2
+----
+
+Description: Multiplies the signed 32-bit values in rd and rs2 and writes the
+high 32 bits of the 64-bit product to rd.
+
+Operation:
+
+[source]
+----
+rd = (sext64(rd) * sext64(rs2)) >> 32
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:9 |8:6 |5:3 |2 |1:0
+|0b0101 |0b001 |rd' |rs2' |0 |0b11
+|===
+
+Division by zero writes all ones to the quotient for C.DIV and C.DIVU, and
+writes the dividend to the remainder for C.REM and C.REMU.  Signed overflow
+(INT32_MIN / -1) writes INT32_MIN to the quotient and 0 to the remainder.
+These instructions do not trap on division by zero.
+
+=== 5.3 CI3 format
+
+CI3 uses f4 = 6, a 2-bit funct2 in bits 11:10, a 4-bit rd in bits 9:6, a 4-bit
+immediate in bits 5:2, and 0b11.
+
+[%autowidth,options="header"]
+|===
+| funct2 | Mnemonic | Operation
+| 00 | C.ORI rd, imm | rd = rd OR imm (zero-extended)
+| 01 | C.SLTI rd, imm | rd = (signed rd < signed imm)
+| 10 | C.SLTIU rd, imm | rd = (unsigned rd < unsigned imm)
+| 11 | C.XORI rd, imm | rd = rd XOR imm (zero-extended)
+|===
+
+[[insn-c-xori]]
+==== C.XORI
+
+Synopsis:
+
+[source]
+----
+c.xori rd, imm
+----
+
+Description: Computes the bitwise XOR of rd and the zero-extended 4-bit
+immediate, and writes the result to rd.  rd is x0-x15.
+
+Operation:
+
+[source]
+----
+rd = rd XOR zext32(imm)
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:10 |9:6 |5:2 |1:0
+|0b0110 |0b11 |rd |imm |0b11
+|===
+
+=== 5.4 Load and store format
+
+Loads and stores use f4 = 7 or 8, a 2-bit funct2 in bits 11:10, a 3-bit
+register field in bits 9:7 (encoding x8-x15), a 2-bit base selector in bits
+6:5, a 3-bit offset field in bits 4:2, and 0b11.  The base selector encodes
+0 = fp (x8), 1 = dp (x9), 2 = sp (x2), 3 = gp (x3).  The offset is scaled by
+the access size.
+
+[%autowidth,options="header"]
+|===
+| f4 | funct2 | Mnemonic
+| 7 | 00 | C.LB rd, off(base)
+| 7 | 01 | C.LH rd, off(base)
+| 7 | 10 | C.LW rd, off(base)
+| 7 | 11 | C.LBU rd, off(base)
+| 8 | 00 | C.LHU rd, off(base)
+| 8 | 01 | C.SB rs2, off(base)
+| 8 | 10 | C.SH rs2, off(base)
+| 8 | 11 | C.SW rs2, off(base)
+|===
+
+[[insn-c-lw]]
+==== C.LW
+
+Synopsis:
+
+[source]
+----
+c.lw rd, off(base)
+----
+
+Description: Loads a 32-bit word from the address base + off*4 and writes it
+to rd.  rd is x8-x15; base is fp, dp, sp, or gp.
+
+Operation:
+
+[source]
+----
+addr = base + (off * 4)
+rd = MEM[addr, 4]
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:10 |9:7 |6:5 |4:2 |1:0
+|0b0111 |0b10 |rd' |base |off |0b11
+|===
+
+== 6. M Extension
+
+The M extension is implemented by the CA3 block (Section 5.2).  C.MUL is the
+Zcb instruction with encoding 0x9EC9 for rd=a3, rs2=a0; it is two-address and
+uses x8-x15.  The Q3 CA3 funct3 = 000 code point is reserved.
+
+== 7. F Extension (F32)
+
+=== 7.1 Format
+
+F32 Q3 instructions use f4 = 9-13, a 2-bit funct2 in bits 11:10, a 4-bit fd in
+bits 9:6, and a 4-bit fs2 in bits 5:2.  All 16 registers f0-f15 are
+addressable.  Arithmetic is two-address.  Rounding is dynamic from frm; there
+is no per-instruction rounding-mode field.  FMA is not implemented; a
+compiler expands a fused multiply-add into a multiply followed by an add.
+
+=== 7.2 Arithmetic and compare
+
+[%autowidth,options="header"]
+|===
+| f4 | funct2 | Mnemonic
+| 9 | 00 | C.FADD.S fd, fs2
+| 9 | 01 | C.FSUB.S fd, fs2
+| 9 | 10 | C.FMUL.S fd, fs2
+| 9 | 11 | C.FDIV.S fd, fs2
+| 10 | 00 | C.FSQRT.S fd, fs2
+| 10 | 01 | C.FMIN.S fd, fs2
+| 10 | 10 | C.FMAX.S fd, fs2
+| 10 | 11 | C.FSGNJ.S fd, fs2
+| 11 | 00 | C.FSGNJN.S fd, fs2
+| 11 | 01 | C.FSGNJX.S fd, fs2
+| 11 | 10 | C.FEQ.S fs1, fs2
+| 11 | 11 | C.FLT.S fs1, fs2
+| 12 | 00 | C.FLE.S fs1, fs2
+| 12 | 01 | C.FCVT.S.W fd, rs1
+| 12 | 10 | C.FCVT.W.S rd, fs1
+| 12 | 11 | C.FCLASS.S rd, fs1
+|===
+
+The compare instructions write 0 or 1 to x31; they do not write a general
+register encoded in the instruction.
+
+=== 7.3 Move, load, and store
+
+[%autowidth,options="header"]
+|===
+| f4 | funct2 | Mnemonic
+| 13 | 00 | C.FMV.X.W rd, fs1
+| 13 | 01 | C.FMV.W.X fd, rs1
+| 13 | 10 | C.FLW fd, off(base)
+| 13 | 11 | C.FSW fs2, off(base)
+|===
+
+C.FLW and C.FSW use a 4-bit fd, a 2-bit base selector, and a 2-bit offset
+scaled by four, giving a 4-byte window.  base uses the same encoding as the
+integer loads and stores.
+
+== 8. CSR Instructions
+
+CSR instructions use f4 = 14, a 4-bit csr4 in bits 11:8, a 4-bit reg4 in bits
+7:4, a 2-bit op2 in bits 3:2, and 0b11.  csr4 = 0 selects the cold path: the
+12-bit CSR address is taken from x31.  csr4 = 1-15 select the hot CSRs below.
+
+[%autowidth,options="header"]
+|===
+| csr4 | CSR | csr4 | CSR
+| 1 | mstatus | 9 | mcycle
+| 2 | misa | 10 | minstret
+| 3 | mie | 11 | mcountinhibit
+| 4 | mtvec | 12 | fcsr
+| 5 | mepc | 13 | pmpcfg0
+| 6 | mcause | 14 | pmpaddr0
+| 7 | mtval | 15 | mhartid
+| 8 | mscratch | |
+|===
+
+[%autowidth,options="header"]
+|===
+| op2 | Mnemonic | Operation
+| 00 | C.CSRR rd, csr | rd = CSR
+| 01 | C.CSRW csr, rs | CSR = rs
+| 10 | C.CSRS csr, rs | CSR = CSR OR rs
+| 11 | C.CSRC csr, rs | CSR = CSR AND NOT rs
+|===
+
+[[insn-c-csrr]]
+==== C.CSRR
+
+Synopsis:
+
+[source]
+----
+c.csrr rd, csr
+----
+
+Description: Reads the selected CSR and writes the zero-extended value to rd
+(x0-x15).  Reading a CSR that is not implemented raises an illegal-
+instruction exception.  The instruction has no write side effect.
+
+Operation:
+
+[source]
+----
+rd = CSR[csr]
+----
+
+Encoding:
+
+[%autowidth]
+|===
+|15:12 |11:8 |7:4 |3:2 |1:0
+|0b1110 |csr4 |rd |0b00 |0b11
+|===
+
+== 9. System Instructions
+
+System instructions use f4 = 15, a 10-bit imm10 in bits 11:2, and 0b11.
+
+[%autowidth,options="header"]
+|===
+| imm10 | Mnemonic | Operation
+| 0 | C.ECALL | Environment call
+| 1 | C.EBREAK | Breakpoint
+| 2 | C.MRET | Return from machine mode
+| 3 | C.WFI | Wait for interrupt
+| 4 | C.FENCE | Memory fence
+| 5 | C.FENCE.I | Instruction fence
+|===
+
+C.ECALL raises an environment-call exception using the current privilege.  In
+machine mode it raises a machine-mode environment call.  C.MRET restores pc
+from mepc and the privilege and interrupt-enable state from mstatus.  C.WFI
+may be treated as a no-op by an implementation.  C.EBREAK raises a breakpoint
+exception unless a debugger is attached.
+
+== 10. Exceptions and Interrupts
+
+An instruction-address-misaligned exception is raised when a branch or jump
+target has bit 0 set.  A load or store address-misaligned exception is raised
+when a word access is not 4-byte aligned.  An illegal-instruction exception is
+raised for an unknown encoding, for a reserved Q3 code point, or for an
+instruction that requires an extension that is not enabled.
+
+The machine-mode trap CSRs are mtvec, mepc, mcause, and mtval.  mcause follows
+the standard RISC-V cause codes.
+
+== 11. ABI
+
+RVM16 uses ILP32F.  Integer arguments are passed in a0-a7 (x10-x17); F32
+arguments are passed in f0-f7.  Integer return values are in a0 and a1; F32
+returns are in f0.  s0-s11 and f8-f15 are callee-saved.  The stack pointer is
+sp (x2) and shall be 16-byte aligned.  x31 is reserved and shall not be used
+for argument passing or allocation.
+
+== 12. Instruction Encodings
+
+=== 12.1 Opcode map
+
+[%autowidth,options="header"]
+|===
+| f4 | Block | Payload
+| 0-4 | CR3 | rd[5] at 11:7, rs2[5] at 6:2
+| 5 | CA3 | funct3 at 11:9, rd' at 8:6, rs2' at 5:3
+| 6 | CI3 | funct2 at 11:10, rd[4] at 9:6, imm[4] at 5:2
+| 7-8 | LD/ST | funct2 at 11:10, reg' at 9:7, base at 6:5, off at 4:2
+| 9-13 | FP | funct2 at 11:10, fd[4] at 9:6, fs2[4] at 5:2
+| 14 | CSR | csr4 at 11:8, reg4 at 7:4, op2 at 3:2
+| 15 | SYS | imm10 at 11:2
+|===
+
+=== 12.2 Instruction listing
+
+[%autowidth,options="header"]
+|===
+| Mnemonic | Encoding range | Notes
+| c.sll rd, rs2 | 0x0000-0x0FFF | block 0
+| c.srl rd, rs2 | 0x1000-0x1FFF | block 1
+| c.sra rd, rs2 | 0x2000-0x2FFF | block 2
+| c.slt rd, rs2 | 0x3000-0x3FFF | block 3
+| c.sltu rd, rs2 | 0x4000-0x4FFF | block 4
+| c.mulh rd, rs2 | 0x5203-0x52FF | CA3 funct3=1
+| c.div rd, rs2 | 0x5803-0x58FF | CA3 funct3=4
+| c.xori rd, imm | 0x6C03-0x6FFF | CI3 funct2=3
+| c.lw rd, off(base) | 0x7803-0x7BFF | block 7 funct2=2
+| c.sw rs2, off(base) | 0x8C03-0x8FFF | block 8 funct2=3
+| c.fadd.s fd, fs2 | 0x9003-0x93FF | block 9 funct2=0
+| c.flw fd, off(base) | 0xD803-0xDBFF | block 13 funct2=2
+| c.csrr rd, csr | 0xE003-0xE0FF | CSR op2=0
+| c.ecall | 0xF003 | SYS imm10=0
+|===
+
+== Appendix A. Instruction Summary
+
+[%autowidth,options="header"]
+|===
+| Extension | Status
+| RVC | inherited, unchanged
+| Q3 integer | specified
+| Q3 M | specified
+| Q3 F32 | specified
+| Q3 CSR | specified
+| Q3 system | specified
+| A | reserved for a future revision
+|===
+
+== Appendix B. Revision History
+
+[%autowidth,options="header"]
+|===
+| Version | Changes
+| 0.1 | Initial manual; RVC base; Q3 block map
+| 0.2 | 32 GPR and F32 locked; 16 FP registers; M/CSR notes
+| 0.3 | Toolchain, testing, C prototype, comparison
+| 0.4 | Official-style AsciiDoc manual; SYS block; FS semantics
+|===
