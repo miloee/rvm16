@@ -62,3 +62,6 @@ Block bound:
 - CSR: csrw/csrr/csrs/csrc pass.
 - CoreMark: seeds 0, CRC final 0x4983, "Correct operation validated", RC=0.
 - Linpack float: still timing out; not validated.
+
+- Zcb: lbu/lh/lhu/sb/sh/zext.b/sext.b/not tested (sext.b needs Zbb), RC=0.
+- Linpack: KFLOPS prints 0.00 because __extendsfdf2 stub returns 0; needs real softfloat.
