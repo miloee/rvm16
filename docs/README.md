@@ -4,7 +4,8 @@
 
 | Document | What it covers |
 |---|---|
-| RVM16-ISA-Manual.adoc | Normative manual, AsciiDoc book in RISC-V manual style (draft 0.4) |
+| RVM16-ISA-Manual.adoc | Normative manual, AsciiDoc book in RISC-V manual style (draft 0.5) |
+| RVM16-C-Design.md | RVM16-C complete proposal: 16 GPR, RVC-compatible, no-flags, 3-address + fused branches |
 | RVA-E16-ISA-Manual.md | Working Markdown notes; the .adoc is the normative text |
 | RVA-E16-Q3-Allocation.md | 16-block Q3 allocation and field budgets |
 | RVM16-vs-RV32E.md | Comparison with RV32E / RV32EC+Zc* |
