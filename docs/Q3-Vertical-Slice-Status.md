@@ -12,6 +12,8 @@
 | LLVM MC | c.xori (0x6EBF) | Works |
 | LLVM MC | c.lw / c.sw (0x7B43 / 0x8FC3) | Works |
 | Spike | c.sll/c.slt/c.xori Q3; c.mul Zcb; c.lw/c.sw Q3 | Verified |
+| Spike | CA3 M: c.mulh/c.mulhsu/c.mulhu/c.div/c.divu/c.rem/c.remu | Verified (7/2=3, 3%2=1) |
+| LLVM MC | CA3 M: seven c.* M ops encode 0x52xx-0x5Exx | Works |
 | Spike | F32 20 ops (add/sub/mul/div/sqrt/min/max/fsgnj/fsgnjn/fsgnjx/eq/lt/le/cvt/fclass/fmv/flw/fsw) | Implemented; add/fsqrt/fcvt/flw/fsw verified |
 | Spike | c.lw_q3 load | Verified |
 | Spike | c.sw_q3 store | **Fixed and verified** |

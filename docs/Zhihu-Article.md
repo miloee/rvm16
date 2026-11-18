@@ -34,7 +34,7 @@ RVM16 保留 00/01/10 的 RVC 逐字节不变，把 11 象限改成一个新的 
 
 目前已经有的：
 
-- LLVM MC：c.sll/c.srl/c.sra/c.slt/c.sltu/c.xori/c.lw/c.sw，以及 20 条 F32（c.fadd.s … c.fsw），都能汇编出正确编码；
+- LLVM MC：c.sll/c.srl/c.sra/c.slt/c.sltu/c.xori/c.lw/c.sw，CA3 的 7 条 M（c.mulh/div/rem 等），以及 20 条 F32（c.fadd.s … c.fsw），都能汇编出正确编码；
 - Spike：同一批 Q3 指令能执行，F32 的 fadd/fsqrt/fcvt/flw/fsw 已经在 Spike 上跑通；
 - 反汇编：llvm-mc -disassemble 能解 f4 0–8 的 Q3（ALU、xori、lw/sw），FP 反汇编还在补；
 - 端到端：LLVM 汇编 → ELF → Spike → HTIF 退出 0。
@@ -97,7 +97,7 @@ RVM16 和这套 RVV 改造共用的是方法论：标准编码不动、只加新
 
 - Expand16：目前有一个独立翻译器原型，能把 clang 的小整数函数展开成 Q3（f(3,4)=59，以及数组求和的循环 sum=10，都已在 Spike 上验证）；LLVM post-RA pass 还没接；
 - CoreMark/Dhrystone 的 code size 对比；
-- FP 反汇编、Q3 的 M/CSR/SYS 块；
+- FP 反汇编、Q3 的 CSR/SYS 块（M 块已完成）；
 - base 寄存器顺序、load/store 偏移单位这些 PoC 细节；
 - Spike/LLVM 的补丁整理成可提交的 patch。
 
