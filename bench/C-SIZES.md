@@ -10,6 +10,14 @@ post-RA pass).  Sizes are .text bytes for the function body.
 | sum (loop, 1 load) | 24 | 30 | +25.0% |
 | call (add + f, stack/ra) | 24 | 18 | -25.0% |
 
+Optimized variant (pointers kept in s0/s1, which requires the caller to pass
+pointer arguments in the Q3 base registers):
+
+| Function | RV32IMAF_C | RVM16 (s0/s1 ABI) | Delta |
+|---|---:|---:|---:|
+| fir | 32 | 34 | +6.3% |
+| sum | 24 | 28 | +16.7% |
+
 The naive translator does not yet exploit the ISA:
 
 - every load/store with a pointer in a0/a1 needs c.mv s0/s1, base first;

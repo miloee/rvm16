@@ -21,6 +21,11 @@ def check(reg):
         raise SystemExit("register %s is outside x8-x15" % reg)
 
 
+def check_mv(reg):
+    if reg in ("x0", "zero") or (reg not in ALLOWED and reg not in ("sp", "ra")):
+        raise SystemExit("mv register %s cannot be encoded" % reg)
+
+
 def check_ls(reg):
     if reg not in LS_ALLOWED:
         raise SystemExit("register %s is outside x0-x15" % reg)
@@ -41,7 +46,7 @@ def pick_base(used):
 
 
 def mv(dst, src):
-    check(dst); check(src)
+    check_mv(dst); check_mv(src)
     return ["  c.mv %s, %s" % (dst, src)]
 
 

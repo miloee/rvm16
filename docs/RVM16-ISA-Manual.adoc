@@ -664,8 +664,9 @@ The naive expansion pays for a c.mv before each load whose base is not one
 of the Q3 base registers, for the two-address form of three-address ALU
 operations, and for compare-plus-branch sequences because Q3 has no flags.
 Keeping pointers in s0/s1 removes most of the load-side moves, but the
-conditional-branch cost remains.  A Q3 two-register conditional branch
-(c.bne rs1', rs2', off, 2 bytes) would change the fir loop from 34 to about
-30 bytes.  These results are the main argument that a strict 16-bit ISA
-needs compiler and ISA co-design; strict width alone is not a code-size
-win for pointer- and branch-heavy C.
+conditional-branch cost remains.  A fused compare-and-branch would help, but a
+16-bit encoding with two 3-bit registers leaves only about four offset bits
+(+-16 bytes), and the FIR loop body is 18 bytes, so it needs a trampoline or
+a different branch design.  These results are the main argument that a strict
+16-bit ISA needs compiler and ISA co-design; strict width alone is not a
+code-size win for pointer- and branch-heavy C.
