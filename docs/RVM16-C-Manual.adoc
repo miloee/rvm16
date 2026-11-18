@@ -301,7 +301,8 @@ Sources used:
 * Dhrystone v2.0 (dhry_pack_1.c, dhry_pack_2.c);
 * CoreMark (core_main.c, core_list_join.c, core_matrix.c, core_state.c,
   core_util.c);
-* Linpack C (linpackc.new, not built yet).
+* Linpack C (linpackc.new).  The default source is double precision; RVM16-C
+  has only F32, so a single-precision port is required.  Not built.
 
 Status:
 

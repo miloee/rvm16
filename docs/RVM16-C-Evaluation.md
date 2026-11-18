@@ -59,6 +59,7 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - Dhrystone 栈访问 37/598 = 6.2%；CoreMark 栈访问 273/2328 = 11.7%。
 - 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（按模型的距离/寄存器判断），每条 +2 B；CoreMark 的 matrix/list 分支较多，需要更精确的距离分析。
 - 结论：GP/PC 让 Dhrystone 这类全局/字符串密集代码明显变小；CoreMark 这类栈/结构体密集代码大约持平，不能说普遍更小。
+- Linpack：标准 linpackc.new 是 double 精度，RVM16-C 只有 F32，不能直接跑；需要 single-precision 端口，目前未构建。
 
 模型不是编译器：actual 列已用 assemble 后的 .text 校准到 Dhrystone 2508；CoreMark actual 列直接取 clang 对象 .text，模型对 CoreMark 的指令尺寸仍有约 11% 高估，所以 CoreMark 的数字只作趋势参考。
 
