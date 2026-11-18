@@ -76,6 +76,27 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - 能说的有界结论是：**在 16 GPR、2-address 为主、3 个融合分支、GP/PC-relative、RVC 不变的约束下，C 是已评估方案中对 Dhrystone 最好的；CoreMark 没有优势。**
 - 真正的“最优”还需要 MILP + 指令频率，这是下一步。
 
+### 6.1 Block-count 有界最优
+
+tools/block_bound.py 在“mandatory FP/M/CSR/SYS/LDST 之外还有 8 个自由 block”的模型下，枚举
+ALU block、分支 block、GP/PC block、额外 LD/ST block 的分配，按指令频率算字节成本。
+
+结果：C 的分配 (ALU=3, branch=3, GP=1, LD/ST=1) 在全部 7 个文件
+（Dhrystone pack1/2、CoreMark 5 个 .c）上都是最优：
+
+| 文件 | best | C |
+|---|---:|---:|
+| dhry_pack_1 | 460 | 460 |
+| dhry_pack_2 | 64 | 64 |
+| core_main | 286 | 286 |
+| core_list_join | 512 | 512 |
+| core_matrix | 412 | 412 |
+| core_state | 212 | 212 |
+| core_util | 52 | 52 |
+
+这是一个**有界**结果：只证明 block 数量分配在这组频率模型下最优，没有证明 opcode
+字段/格式的全局最优；完整的 MILP 仍未做。
+
 ## 3. 待补指标
 
 ### 3.1 Spill 率
