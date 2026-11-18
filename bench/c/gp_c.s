@@ -7,7 +7,7 @@ _start:
   c.slli x14, 31
   c.add x3, x14
   .2byte 0x3013
-  .2byte 0x3117
+  .2byte 0x3097
   c.add x8, x9
   c.li x14, 1
   c.li x15, 2

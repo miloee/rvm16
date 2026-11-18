@@ -558,8 +558,9 @@ prologue/epilogue;</p>
 profile: cm.jt index 0-31, cm.jalt index 32-255, using the jvt CSR;</p>
 </li>
 <li>
-<p>Zcd requires D/FLEN=64; RVM16-C is F32-only, so c.fld/c.fsd are not
-applicable.  Adding D would change the F32-only premise and the FP ABI.</p>
+<p>Zcd is not enabled in the F32 profiles.  Its standard RVC encodings are
+left untouched and reserved for a future D-capable RVM16-C-D profile;
+enabling it requires FLEN=64 and D, which is a separate profile.</p>
 </li>
 <li>
 <p>RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.</p>
@@ -827,6 +828,12 @@ bits[11:2] = 10-bit payload</pre>
 </tr>
 </tbody>
 </table>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-alu.svg" alt="enc alu" width="100%">
+</div>
+<div class="title">Figure 1. ALU-12 编码</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -843,6 +850,12 @@ bits[11:2] = 10-bit payload</pre>
 <p>rs1_3/rs2_3 are x8-x15.  off4 is signed, scaled by 2, range -16..+14 bytes.
 f4=5 is c.bne, f4=6 is c.blt.  c.bge rs1,rs2,L is c.blt rs2,rs1,L.</p>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-bne.svg" alt="enc bne" width="100%">
+</div>
+<div class="title">Figure 2. c.bne / c.blt 编码</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_6_2_c_blez">6.2 c.blez</h3>
@@ -853,6 +866,12 @@ f4=5 is c.bne, f4=6 is c.blt.  c.bge rs1,rs2,L is c.blt rs2,rs1,L.</p>
 </div>
 <div class="paragraph">
 <p>rs_3 is x8-x15; off7 is signed, scaled by 2, range -128..+126 bytes.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-blez.svg" alt="enc blez" width="100%">
+</div>
+<div class="title">Figure 3. c.blez 编码</div>
 </div>
 </div>
 <div class="sect2">
@@ -891,6 +910,12 @@ use a c.j trampoline.</p>
 <p>GP-relative accesses handle small globals.  PC-relative literals handle
 string addresses and large constants without li32.</p>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-gppc.svg" alt="enc gppc" width="100%">
+</div>
+<div class="title">Figure 4. GP/PC-relative 编码</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -906,6 +931,12 @@ string addresses and large constants without li32.</p>
 0 = x8, 1 = x9, 2 = sp, 3 = gp.  off2 is scaled by access size (0-12 B for
 words).  Byte and halfword accesses use Zcb.</p>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-ldst.svg" alt="enc ldst" width="100%">
+</div>
+<div class="title">Figure 5. LD/ST 编码</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -919,6 +950,12 @@ words).  Byte and halfword accesses use Zcb.</p>
 <div class="paragraph">
 <p>funct3: 0 reserved (c.mul is Zcb), 1 mulh, 2 mulhsu, 3 mulhu, 4 div,
 5 divu, 6 rem, 7 remu.  rd_3/rs2_3 are x8-x15.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-m.svg" alt="enc m" width="100%">
+</div>
+<div class="title">Figure 6. M 编码</div>
 </div>
 </div>
 </div>
@@ -993,6 +1030,12 @@ words).  Byte and halfword accesses use Zcb.</p>
 <p>There is no FMA.  frm is dynamic.  fcmp writes the 4-bit fd field; the
 compiler should choose x8-x15 if the result feeds a fused branch.</p>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-fp.svg" alt="enc fp" width="100%">
+</div>
+<div class="title">Figure 7. F32 编码</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -1010,6 +1053,12 @@ compiler should choose x8-x15 if the result feeds a fused branch.</p>
 <p>op2: 0 csrr, 1 csrw, 2 csrs, 3 csrc.  csr4=0 uses the cold path with the
 12-bit CSR address in x7.</p>
 </div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-csr.svg" alt="enc csr" width="100%">
+</div>
+<div class="title">Figure 8. CSR 编码</div>
+</div>
 <div class="paragraph">
 <p>SYS:</p>
 </div>
@@ -1020,6 +1069,12 @@ compiler should choose x8-x15 if the result feeds a fused branch.</p>
 </div>
 <div class="paragraph">
 <p>imm10: 0 ecall, 1 ebreak, 2 mret, 3 wfi, 4 fence, 5 fence.i.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="figs/enc-sys.svg" alt="enc sys" width="100%">
+</div>
+<div class="title">Figure 9. SYS 编码</div>
 </div>
 </div>
 </div>
@@ -1104,8 +1159,8 @@ method and caveats.</p>
 <p>Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.</p>
 </li>
 <li>
-<p>Zcmt: cm.jt 0-31 / cm.jalt 32-255 encodings verified with +zcmt;
-runtime needs jvt and a table, not tested.</p>
+<p>Zcmt: cm.jt 0-31 / cm.jalt 32-255 verified; runtime tested with
+jvt=0x80000240 (64-byte aligned), cm.jt 0 jumped to the target, RC=0.</p>
 </li>
 <li>
 <p>LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
@@ -1235,6 +1290,11 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.</p>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-E</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, C v2.0, Zcb, Zcmp, Zcmt</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Zcf optional</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-D (future)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I, M, D, C v2.0, Zcb, Zcmp, Zcd</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
 </tr>
 </tbody>
 </table>
@@ -1398,7 +1458,7 @@ not compiled binaries.</p>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">quadrant 10 reserved</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">jvt table; cm.jt 0-31, cm.jalt 32-255</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">jvt table (64-byte aligned); cm.jt 0-31, cm.jalt 32-255</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Zcf</p></td>
@@ -1407,8 +1467,8 @@ not compiled binaries.</p>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Zcd</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">requires D/FLEN=64, not applicable</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">reserved</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">not enabled in F32; encodings left for a D-capable profile</p></td>
 </tr>
 </tbody>
 </table>
@@ -1434,8 +1494,8 @@ not compiled binaries.</p>
 Q3 and RVC mnemonics cannot be confused.</p>
 </li>
 <li>
-<p>Zcf compressed FP loads/stores use f8-f15; Zcd is excluded because the ISA
-is F32-only.</p>
+<p>Zcf compressed FP loads/stores use f8-f15; Zcd is not enabled in F32
+profiles, but its encodings are left reserved for a D-capable profile.</p>
 </li>
 </ol>
 </div>
@@ -1468,7 +1528,7 @@ is F32-only.</p>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2026-11-18 20:31:06 +0800
+Last updated 2026-11-18 21:14:38 +0800
 </div>
 </div>
 </body>

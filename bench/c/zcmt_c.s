@@ -1,7 +1,7 @@
 .text
 .globl _start
 _start:
-  c.li x31, 0x17
+  c.li x7, 0x17
   c.li a0, 2
   c.slli a0, 8
   c.li a4, 1

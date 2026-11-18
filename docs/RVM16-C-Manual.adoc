@@ -142,6 +142,9 @@ rd and rs2 are 4-bit (x0-x15); the operation is rd = rd op rs2.
 | 2 | 2-3 | reserved
 |===
 
+.ALU-12 编码
+image::figs/enc-alu.svg[width=100%]
+
 == 6. Fused Branches
 
 === 6.1 c.bne and c.blt
@@ -151,11 +154,17 @@ rd and rs2 are 4-bit (x0-x15); the operation is rd = rd op rs2.
 rs1_3/rs2_3 are x8-x15.  off4 is signed, scaled by 2, range -16..+14 bytes.
 f4=5 is c.bne, f4=6 is c.blt.  c.bge rs1,rs2,L is c.blt rs2,rs1,L.
 
+.c.bne / c.blt 编码
+image::figs/enc-bne.svg[width=100%]
+
 === 6.2 c.blez
 
     word = (7 << 12) | (rs_3 << 9) | (off7 << 2) | 0b11
 
 rs_3 is x8-x15; off7 is signed, scaled by 2, range -128..+126 bytes.
+
+.c.blez 编码
+image::figs/enc-blez.svg[width=100%]
 
 === 6.3 Conditions without a fused branch
 
@@ -176,6 +185,9 @@ funct2: 0 = lwgp, 1 = swgp, 2 = lwpc, 3 reserved.
 GP-relative accesses handle small globals.  PC-relative literals handle
 string addresses and large constants without li32.
 
+.GP/PC-relative 编码
+image::figs/enc-gppc.svg[width=100%]
+
 == 8. Load/Store
 
     word = (8 << 12) | (funct2 << 10) | (reg << 6) | (base << 4) | (off2 << 2) | 0b11
@@ -184,12 +196,18 @@ funct2: 0 = lwc, 1 = swc, 2-3 reserved.  reg is x0-x15; base is 2 bits:
 0 = x8, 1 = x9, 2 = sp, 3 = gp.  off2 is scaled by access size (0-12 B for
 words).  Byte and halfword accesses use Zcb.
 
+.LD/ST 编码
+image::figs/enc-ldst.svg[width=100%]
+
 == 9. M Extension
 
     word = (4 << 12) | (funct3 << 9) | (rd_3 << 6) | (rs2_3 << 3) | 0b11
 
 funct3: 0 reserved (c.mul is Zcb), 1 mulh, 2 mulhsu, 3 mulhu, 4 div,
 5 divu, 6 rem, 7 remu.  rd_3/rs2_3 are x8-x15.
+
+.M 编码
+image::figs/enc-m.svg[width=100%]
 
 == 10. F32
 
@@ -213,6 +231,9 @@ fd/fs2 are 4-bit (f0-f15).  The 20 operations are the same as RVM16-A:
 There is no FMA.  frm is dynamic.  fcmp writes the 4-bit fd field; the
 compiler should choose x8-x15 if the result feeds a fused branch.
 
+.F32 编码
+image::figs/enc-fp.svg[width=100%]
+
 == 11. CSR and SYS
 
 CSR:
@@ -222,11 +243,17 @@ CSR:
 op2: 0 csrr, 1 csrw, 2 csrs, 3 csrc.  csr4=0 uses the cold path with the
 12-bit CSR address in x7.
 
+.CSR 编码
+image::figs/enc-csr.svg[width=100%]
+
 SYS:
 
     word = (15 << 12) | (imm10 << 2) | 0b11
 
 imm10: 0 ecall, 1 ebreak, 2 mret, 3 wfi, 4 fence, 5 fence.i.
+
+.SYS 编码
+image::figs/enc-sys.svg[width=100%]
 
 == 12. Exceptions and Traps
 
