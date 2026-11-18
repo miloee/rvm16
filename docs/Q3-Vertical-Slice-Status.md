@@ -8,7 +8,7 @@
 | Allocation | 16 Q3 blocks, 16,384 patterns, checked | Done |
 | LLVM MC | c.sll/c.slt/c.xori/c.lw/c.sw (Q3) + c.mul (Zcb 0x9EC9) | Works |
 | LLVM MC | F32: 20 Q3 FP ops (add/sub/mul/div/sqrt/min/max/fsgnj/eq/lt/le/cvt/fclass/fmv/flw/fsw) | Works |
-| Compiler | expand16.py: clang leaf asm -> Q3, f(3,4)=59, Spike RC=0 | Verified (leaf subset) |
+| Compiler | expand16.py: f(3,4)=59; sum loop over 1,2,3,4 = 10 | Verified (leaf+loop subset) |
 | LLVM MC | c.xori (0x6EBF) | Works |
 | LLVM MC | c.lw / c.sw (0x7B43 / 0x8FC3) | Works |
 | Spike | c.sll/c.slt/c.xori Q3; c.mul Zcb; c.lw/c.sw Q3 | Verified |
@@ -105,10 +105,11 @@ trace shows x14 = 0x120 from 0x80000200.
 5. **P2: c.mul is Zcb, not Q3.**  The Q3 CA3 funct3=0 is reserved.  The
    allocation table still says 8 M ops; it is 7 plus the reserved point.
 6. **P2: Expand16 is a prototype.**  A standalone translator
-   (rva-e/tools/expand16.py) expands a leaf-function subset (sll/mul/add/
-   sub/slt/mv/ret, registers x8-x15) from clang's RV32 asm to Q3; f(3,4)=59
-   runs on Spike.  The LLVM post-RA pass is not written yet, and branches/
-   loads/stores are unsupported.
+   (rva-e/tools/expand16.py) expands a small integer subset (li/mv/add/addi/
+   sub/sll/slli/mul/slt/lw/sw/blez/bne/beq/blt/bge/j/ret, registers x8-x15)
+   from clang's RV32 asm to Q3.  f(3,4)=59 and a sum loop over 1,2,3,4 = 10
+   run on Spike.  The LLVM post-RA pass is not written yet; calls, stack
+   frames, and large offsets are unsupported.
 7. **P2: the Spike and LLVM trees are PoC artifacts.**  Spike forces
    insn_length=2 and filters 32-bit opcodes; the LLVM changes are uncommitted
    in an EVE fork.

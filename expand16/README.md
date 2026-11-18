@@ -1,9 +1,9 @@
 # Expand16 prototype: C -> Q3
 
 This is a standalone translator, not the LLVM post-RA pass.  It takes the
-RV32 assembly emitted by clang for a leaf function and expands the subset into
-Q3/RVC 16-bit instructions.  It proves the C -> Q3 path while the LLVM pass is
-being written.
+RV32 assembly emitted by clang for a small integer function and expands the
+subset into Q3/RVC 16-bit instructions.  It proves the C -> Q3 path while the
+LLVM pass is being written.
 
 ## C source
 
@@ -56,9 +56,31 @@ All registers are a0-a3 (x10-x13), inside the RVC x8-x15 window.
 
 f(3,4) = (3<<4) + (3*4) - (3<4) = 48 + 12 - 1 = 59.
 
+## Loop example
+
+    int sum(int *a, int n) {
+      int s = 0;
+      for (int i = 0; i < n; i++) s += a[i];
+      return s;
+    }
+
+clang -O2 emits li/blez/slli/add/lw/addi/add/bne/mv/ret.  The translator
+expands:
+
+- blez rs, L  ->  c.li t,0; c.slt t,rs; c.beqz t,L
+- bne rs1,rs2,L -> c.mv t,rs1; c.xor t,rs2; c.bnez t,L
+- lw rd,off(base) -> c.mv s0,base; c.lw rd,off(s0) when base is not s0/s1/sp/gp
+
+For the array 1,2,3,4 the result is 10:
+
+    0x8000003c (0x8532) x10 0x0000000a   # c.mv a0,a2
+    0x8000003e (0x8082)                  # c.jr ra
+    RC=0
+
 ## Limits
 
-- leaf functions only; no calls/branches/loads/stores yet;
+- no calls or stack frames; simple branches and word loads/stores are
+  supported;
 - all values must be in x8-x15 (s0/s1/a0-a5); the Q3/RVC forms cannot encode
   x16-x31 for add/sub/mv;
 - sub with rd != rs1 needs a free temp;

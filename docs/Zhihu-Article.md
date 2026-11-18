@@ -95,7 +95,7 @@ RVM16 和这套 RVV 改造共用的是方法论：标准编码不动、只加新
 
 ## 七、还没做完的
 
-- Expand16：目前有一个独立翻译器原型，能把 clang 的 leaf 函数展开成 Q3（f(3,4)=59 已在 Spike 上验证）；LLVM post-RA pass 还没接；
+- Expand16：目前有一个独立翻译器原型，能把 clang 的小整数函数展开成 Q3（f(3,4)=59，以及数组求和的循环 sum=10，都已在 Spike 上验证）；LLVM post-RA pass 还没接；
 - CoreMark/Dhrystone 的 code size 对比；
 - FP 反汇编、Q3 的 M/CSR/SYS 块；
 - base 寄存器顺序、load/store 偏移单位这些 PoC 细节；

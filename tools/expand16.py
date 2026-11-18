@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Minimal Expand16 prototype.
+"""Minimal Expand16 prototype (leaf functions + simple loops).
 
-Reads a leaf-function RV32 assembly subset (clang -O2 output) and emits Q3
-two-address code.  This is NOT the LLVM post-RA pass; it is a standalone
-translator used to prove the C -> Q3 path while the pass is being written.
+Reads the RV32 assembly emitted by clang -O2 for a small integer function and
+emits Q3/RVC two-address code.  This is NOT the LLVM post-RA pass.
 
-Supported: sll, mul, add, sub, slt, mv, li, ret.
-Registers must be in x8-x15 (s0/s1/a0-a5); the Q3/RVC forms cannot encode
-x16-x31 for add/sub/mv.
+Supported: li, mv, add, addi, sub, sll, slli, mul, slt, lw, sw,
+           blez, bne, beq, blt, bge, j, ret, labels.
+Registers must be in x8-x15 (s0/s1/a0-a5); add/sub/mv cannot encode x16-x31.
 """
-import re
 import sys
 
 ALLOWED = {"a0", "a1", "a2", "a3", "a4", "a5", "s0", "s1"}
+BASES = {"s0", "s1", "sp", "gp"}
 TEMP_ORDER = ["a4", "a5", "a3", "a2", "a1", "a0", "s0", "s1"]
 
 
@@ -21,29 +20,107 @@ def check(reg):
         raise SystemExit("register %s is outside x8-x15" % reg)
 
 
-def emit_mv(dst, src):
+def pick_temp(used):
+    for r in TEMP_ORDER:
+        if r not in used:
+            return r
+    raise SystemExit("no free temp")
+
+
+def pick_base(used):
+    for r in ("s0", "s1"):
+        if r not in used:
+            return r
+    raise SystemExit("no free base")
+
+
+def mv(dst, src):
     check(dst); check(src)
     return ["  c.mv %s, %s" % (dst, src)]
 
 
-def expand(op, args):
+def label(name):
+    return name if name.startswith(".L") else ".L" + name
+
+
+def expand(op, rest):
     if op == "ret":
         return ["  c.jr ra"]
-    if op == "mv":
-        rd, rs = [x.strip() for x in args.split(",")]
-        return emit_mv(rd, rs)
+    if op == "nop":
+        return ["  c.nop"]
+    if op == "j":
+        return ["  c.j %s" % label(rest.strip())]
+
+    a = [x.strip() for x in rest.split(",")]
+
     if op == "li":
-        rd, imm = [x.strip() for x in args.split(",")]
-        check(rd)
-        return ["  c.li %s, %s" % (rd, imm)]
+        check(a[0])
+        return ["  c.li %s, %s" % (a[0], a[1])]
+    if op == "mv":
+        return mv(a[0], a[1])
+
+    if op in ("lw", "sw"):
+        reg = a[0]
+        mem = a[1]
+        off, base = mem[:-1].split("(")
+        off = int(off)
+        check(reg)
+        if off % 4 != 0 or off // 4 > 3:
+            raise SystemExit("offset %d out of range for %s" % (off, op))
+        field = off // 4
+        used = {reg, base}
+        if base in BASES:
+            breg, pre = base, []
+        else:
+            breg = pick_base(used)
+            pre = mv(breg, base)
+        return pre + ["  c.%s %s, %d(%s)" % (op, reg, field, breg)]
+
+    if op == "blez":
+        rs, target = a[0], a[1]
+        check(rs)
+        t = pick_temp({rs})
+        return ["  c.li %s, 0" % t, "  c.slt %s, %s" % (t, rs),
+                "  c.beqz %s, %s" % (t, label(target))]
+
+    if op in ("bne", "beq"):
+        rs1, rs2, target = a[0], a[1], a[2]
+        check(rs1); check(rs2)
+        t = pick_temp({rs1, rs2})
+        out = mv(t, rs1) + ["  c.xor %s, %s" % (t, rs2)]
+        out.append("  c.%s %s, %s" % ("bnez" if op == "bne" else "beqz",
+                                      t, label(target)))
+        return out
+
+    if op in ("blt", "bge"):
+        rs1, rs2, target = a[0], a[1], a[2]
+        check(rs1); check(rs2)
+        t = pick_temp({rs1, rs2})
+        out = mv(t, rs1) + ["  c.slt %s, %s" % (t, rs2)]
+        out.append("  c.%s %s, %s" % ("bnez" if op == "blt" else "beqz",
+                                      t, label(target)))
+        return out
+
+    if op == "addi":
+        rd, rs1, imm = a[0], a[1], a[2]
+        check(rd); check(rs1)
+        out = [] if rd == rs1 else mv(rd, rs1)
+        return out + ["  c.addi %s, %s" % (rd, imm)]
+
+    if op == "slli":
+        rd, rs1, imm = a[0], a[1], a[2]
+        check(rd); check(rs1)
+        out = [] if rd == rs1 else mv(rd, rs1)
+        return out + ["  c.slli %s, %s" % (rd, imm)]
+
     if op not in ("sll", "mul", "add", "sub", "slt"):
         raise SystemExit("unsupported op: " + op)
-    rd, rs1, rs2 = [x.strip() for x in args.split(",")]
+    rd, rs1, rs2 = a[0], a[1], a[2]
     check(rd); check(rs1); check(rs2)
     out = []
     if op in ("sll", "mul"):
         if rd != rs1:
-            out += emit_mv(rd, rs1)
+            out += mv(rd, rs1)
         out.append("  c.%s %s, %s" % (op, rd, rs2))
     elif op == "add":
         if rd == rs1:
@@ -51,47 +128,40 @@ def expand(op, args):
         elif rd == rs2:
             out.append("  c.add %s, %s" % (rd, rs1))
         else:
-            out += emit_mv(rd, rs1)
+            out += mv(rd, rs1)
             out.append("  c.add %s, %s" % (rd, rs2))
     elif op == "slt":
         if rd != rs1:
-            out += emit_mv(rd, rs1)
+            out += mv(rd, rs1)
         out.append("  c.slt %s, %s" % (rd, rs2))
     elif op == "sub":
         if rd == rs1:
             out.append("  c.sub %s, %s" % (rd, rs2))
         else:
-            used = {rd, rs1, rs2}
-            temp = next((r for r in TEMP_ORDER if r not in used), None)
-            if temp is None:
-                raise SystemExit("no free temp for sub")
-            out += emit_mv(temp, rs2)
-            out += emit_mv(rd, rs1)
-            out.append("  c.sub %s, %s" % (rd, temp))
+            t = pick_temp({rd, rs1, rs2})
+            out += mv(t, rs2) + mv(rd, rs1)
+            out.append("  c.sub %s, %s" % (rd, t))
     return out
 
 
 def main():
-    src = sys.stdin.read().splitlines()
-    out = [".text", ".p2align 1", ".Lf:"]
-    for line in src:
+    out = [".text", ".p2align 1"]
+    for line in sys.stdin:
         line = line.split("#")[0].strip()
-        if not line or line.startswith("."):
+        if not line:
             continue
         if line.endswith(":"):
+            out.append(label(line[:-1]) + ":")
             continue
-        if line == "ret":
-            out.append("  c.jr ra")
+        if line.startswith("."):
             continue
-        m = re.match(r"([a-z.]+)\s+(.*)", line)
-        if not m:
-            continue
-        op, args = m.group(1), m.group(2)
+        parts = line.split(None, 1)
+        op = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
         if op.startswith("c."):
             out.append("  " + line)
             continue
-        out += expand(op, args)
-    out += [".size .Lf, .-.Lf"]
+        out += expand(op, rest)
     print("\n".join(out))
 
 
