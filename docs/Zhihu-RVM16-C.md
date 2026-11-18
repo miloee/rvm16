@@ -29,17 +29,17 @@ block 分配是 16/16：
 
 ## 数据
 
-同一组 C 函数（clang -O2）：
+FIR/sum 是 llvm-mc 汇编 + Spike 实测；Dhrystone/CoreMark 是静态模型，不是完整编译器产出的二进制。
 
 | 内核 | RV32EC+Zc* | RVM16-C | 变化 |
 |---|---:|---:|---:|
 | FIR | 30 B | 26 B | -13.3% |
 | sum | 24 B | 20 B | -16.7% |
-| Dhrystone | 2508 B | 1948 B（+stub ≈2068） | -17% ~ -22% |
-| CoreMark core | 6398 B | 6532 B | +2.1% |
+| Dhrystone | 2508 B | 1906 B（+stub ≈2026） | -19% ~ -24% |
+| CoreMark core | 6398 B | 6316 B | -1.3% |
 
 - Dhrystone 有 29 处 .L_MergedGlobals、53 处 .L.str；GP/PC 把地址构造从 8-12 B 降到 2 B，这是主要收益。
-- CoreMark 是栈/结构体密集，GP=0，只有 32 处字符串；C 基本持平。
+- CoreMark 是栈/结构体密集，GP=0，只有 32 处字符串；加入 Zcmp 的 2 B prologue/epilogue 后，模型约 -1.3%，仍可视作持平。
 - 栈访问：Dhrystone 6.2%，CoreMark 11.7%。
 - 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（模型判断）。
 
@@ -47,8 +47,8 @@ block 分配是 16/16：
 
 **严格 16 位不是通用 C 的 code-size 银弹。**
 
-- 指针/全局/字符串密集的代码，RVM16-C 能小 15-20%；
-- 栈/结构体密集的代码，最多持平；
+- 指针/全局/字符串密集的代码，RVM16-C 能小 19-24%（Dhrystone 模型）；
+- 栈/结构体密集的代码，约持平或略小（CoreMark 模型 -1.3%）；
 - 没有 flags、没有 32 位逃生口，某些循环仍然要靠 compare+branch；
 - 和 Thumb 比，RVM16-C 少了 flags 和 32 位 Thumb-2，多了 RVC 兼容。
 
