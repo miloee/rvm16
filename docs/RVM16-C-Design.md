@@ -9,7 +9,7 @@ RVM16-C 是一个**兼容 RVC、no-flags、16 GPR、严格 16 位**的 RISC-V �
 和 RVM16-A 的区别：
 
 - A：32 GPR、2-address、无融合分支；通用 C 反而比 RVGC 大。
-- C：16 GPR、2-address 为主 + GP-relative load/store、融合 bne/blt/blez；用低 8 位字段换分支和指针基址。
+- C：16 GPR、2-address 为主 + GP/PC-relative load/store、融合 bne/blt/blez；用低 8 位字段换分支和指针基址。
 
 ## 2. 约束
 
@@ -51,7 +51,7 @@ ABI（RVM16-C ILP32F-16）：
 - F32 参数 f0-f7，返回 f0；f8-f15 callee-saved；
 - s0/s1 只有在函数用到时才保存；
 - sp/ra 用 RVC 和 Q3 的 4-bit load/store 保存；
-- gp = x3 指向 small-data 段起始，启动时设一次；GP-relative off 范围 0..252 B；
+- gp = x3 指向 small-data 段起始，启动时设一次；GP/PC-relative off 范围 0..124 B；
 - 栈 16 B 对齐；
 - 变参：a0-a5 + f0-f7；没有 x16+；
 - 分支操作数必须在 x8-x15，编译器负责把分支用值放低 8 个。
@@ -69,7 +69,7 @@ Q3 的 16 个 f4 block：
 | 0 | ALU-12 A | funct2 + rd4 + rs2_4：add/sub/and/or |
 | 1 | ALU-12 B | funct2 + rd4 + rs2_4：xor/sll/srl/sra |
 | 2 | ALU-12 C | funct2 + rd4 + rs2_4：slt/sltu + 2 reserved |
-| 3 | GP-relative | funct1 + reg3 + off6：lw/sw（gp=x3） |
+| 3 | GP/PC-relative | funct2 + reg3 + off5：lwgp/swgp/lwpc |
 | 4 | M | funct3 + rd3 + rs2_3：mulh/mulhsu/mulhu/div/divu/rem/remu |
 | 5 | c.bne | rs1_3 + rs2_3 + off4 |
 | 6 | c.blt | rs1_3 + rs2_3 + off4；bge 交换 rs1/rs2 |
@@ -107,18 +107,19 @@ rd、rs2 是 x0-x15；2-address：rd = rd op rs2。
 | 2 | 1 | sltu rd, rs2 | rd = (unsigned rd < unsigned rs2) |
 | 2 | 2-3 | reserved | |
 
-## 7. GP-relative load/store（f4=3）
+## 7. GP/PC-relative load/store（f4=3）
 
 编码：
 
-    word = (3 << 12) | (funct1 << 11) | (rd3 << 8) | (off6 << 2) | 0b11
+    word = (3 << 12) | (funct2 << 10) | (rd3 << 7) | (off5 << 2) | 0b11
 
 - rd3 是 x8-x15；
-- funct1：0 = lw，1 = sw；
-- off6 是无符号 0-63，按 4 B 缩放，范围 0..252 B，基址固定为 gp = x3；
-- gp 在启动时设一次，指向 small-data 段起始。
+- funct2：0 = lwgp，1 = swgp，2 = lwpc，3 = reserved；
+- off5 是无符号 0-31，按 4 B 缩放，范围 0..124 B；
+- lwgp/swgp：地址 = gp + off5*4，gp = x3，启动时指向 small-data 段；
+- lwpc：地址 = pc + off5*4，编译器把 32 位常量/字符串地址放进 124 B 内的 literal pool。
 
-原来的三地址 add/sub 被这个 block 替换：FIR/sum 的 ALU 都是 rd==rs1/rs2，用不到三地址；Dhrystone 的 88 条 lui/auipc 更需要 gp 相对访问。
+这个 block 替换了原来的三地址 add/sub。GP 解决 .L_MergedGlobals/Int_Glob 一类全局变量；PC-relative literal 解决 Dhrystone 里大量 .L.str 字符串地址，避免每条地址都 li32（16-26 B）。
 
 ## 8. 融合分支（f4=5,6,7）
 
@@ -208,7 +209,8 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 | li rd, imm6 | c.li | 2 |
 | li rd, imm32 | 5-bit chunk 构造，8-13 条 | 16-26 |
 | add rd, rs1, rs2 | 若 rd==rs1/rs2：2-address；否则 mv+2addr | 2-4 |
-| lw/sw rd, off(gp) | c.lwgp/c.swgp，off 0..252 | 2 |
+| lw/sw rd, off(gp) | c.lwgp/c.swgp，off 0..124 | 2 |
+| lw rd, off(pc) | c.lwpc，off 0..124 | 2 |
 | beq rs1, rs2, L | xor + c.beqz | 4 |
 | bge rs1, rs2, L | c.blt rs2, rs1, L | 2 |
 | bgeu/bltu | sltu + c.beqz/c.bnez | 6 |

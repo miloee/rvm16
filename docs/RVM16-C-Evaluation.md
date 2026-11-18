@@ -37,14 +37,15 @@ pack_1：584 条指令，37 条栈访问（6.3%），88 条 lui/auipc（15.1%）
 
 所以“C 在当前 block map 下最优”不成立；缺的是 GP-relative/literal pool。
 
-### 2.2 GP-relative 已加入
+### 2.2 GP/PC-relative 已加入
 
-- f4=3 的三地址 block 已替换为 GP-relative：funct1 + reg3 + off6，0..252 B，基址 gp=x3；
-- 新增 c.lwgp/c.swgp；
-- Spike 测试：gp=0x80000200，加载 5/7，x8=12，RC=0；
+- f4=3 的三地址 block 已替换为 GP/PC-relative：funct2 + reg3 + off5；
+- funct2：0=lwgp，1=swgp，2=lwpc；off5 0..124 B；
+- GP 解决 .L_MergedGlobals/Int_Glob 一类全局变量；lwpc 解决 .L.str 字符串地址（literal pool）；
+- Spike 测试：GP 加载 5/7，x8=12，RC=0；PC literal 加载 0x12345678，x8=0x12345678，RC=0；
 - FIR/sum 不受影响，仍是 26/20，x8=70/10。
 
-Dhrystone 的 88 条 lui/auipc 里，落在 gp+252 B 的全局访问可以变成 2 B 的 lwgp/swgp；仍需模型确认能省多少。
+Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者从 ~12 B 降到 2 B，lwpc 让后者从 ~8 B 降到 2 B（加 pool）。粗略估计可省 300-400 B，C 可能从 2508 降到 2100-2200；需要模型确认。
 
 ## 3. 待补指标
 
