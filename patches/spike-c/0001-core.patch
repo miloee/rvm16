@@ -1,0 +1,160 @@
+--- /home/milo/spike-q3/riscv/encoding.h	2026-11-18 16:44:25.524046804 +0800
++++ spike-c/riscv/encoding.h	2026-11-18 17:35:21.498714700 +0800
+@@ -863,6 +863,24 @@
+ #define MASK_C_LW_Q3 0xfc03
+ #define MATCH_C_SW_Q3 0x8c03
+ #define MASK_C_SW_Q3 0xfc03
++#define MATCH_C_ADD_C 0x0003
++#define MASK_C_ADD_C 0xfc03
++#define MATCH_C_SUB_C 0x0403
++#define MASK_C_SUB_C 0xfc03
++#define MATCH_C_ADD3_C 0x3003
++#define MASK_C_ADD3_C 0xf803
++#define MATCH_C_SUB3_C 0x3803
++#define MASK_C_SUB3_C 0xf803
++#define MATCH_C_BNE_C 0x5003
++#define MASK_C_BNE_C 0xf003
++#define MATCH_C_BLT_C 0x6003
++#define MASK_C_BLT_C 0xf003
++#define MATCH_C_BLEZ_C 0x7003
++#define MASK_C_BLEZ_C 0xf003
++#define MATCH_C_LW_C 0x8003
++#define MASK_C_LW_C 0xfc03
++#define MATCH_C_SW_C 0x8403
++#define MASK_C_SW_C 0xfc03
+ #define MATCH_C_FADD_Q3 0x9003
+ #define MASK_C_FADD_Q3 0xfc03
+ #define MATCH_C_FSUB_Q3 0x9403
+@@ -4707,6 +4725,15 @@
+ DECLARE_INSN(c_xori_q3, MATCH_C_XORI_Q3, MASK_C_XORI_Q3)
+ DECLARE_INSN(c_lw_q3, MATCH_C_LW_Q3, MASK_C_LW_Q3)
+ DECLARE_INSN(c_sw_q3, MATCH_C_SW_Q3, MASK_C_SW_Q3)
++DECLARE_INSN(c_add_c, MATCH_C_ADD_C, MASK_C_ADD_C)
++DECLARE_INSN(c_sub_c, MATCH_C_SUB_C, MASK_C_SUB_C)
++DECLARE_INSN(c_add3_c, MATCH_C_ADD3_C, MASK_C_ADD3_C)
++DECLARE_INSN(c_sub3_c, MATCH_C_SUB3_C, MASK_C_SUB3_C)
++DECLARE_INSN(c_bne_c, MATCH_C_BNE_C, MASK_C_BNE_C)
++DECLARE_INSN(c_blt_c, MATCH_C_BLT_C, MASK_C_BLT_C)
++DECLARE_INSN(c_blez_c, MATCH_C_BLEZ_C, MASK_C_BLEZ_C)
++DECLARE_INSN(c_lw_c, MATCH_C_LW_C, MASK_C_LW_C)
++DECLARE_INSN(c_sw_c, MATCH_C_SW_C, MASK_C_SW_C)
+ DECLARE_INSN(c_fadd_q3, MATCH_C_FADD_Q3, MASK_C_FADD_Q3)
+ DECLARE_INSN(c_fsub_q3, MATCH_C_FSUB_Q3, MASK_C_FSUB_Q3)
+ DECLARE_INSN(c_fmul_q3, MATCH_C_FMUL_Q3, MASK_C_FMUL_Q3)
+--- /home/milo/spike-q3/riscv/decode.h	2026-11-18 16:44:25.554456200 +0800
++++ spike-c/riscv/decode.h	2026-11-18 17:35:21.498714700 +0800
+@@ -97,6 +97,17 @@
+   uint64_t q3_ls_reg() { return x(6, 4); }
+   uint64_t q3_ls_base() { return x(4, 2); }
+   uint64_t q3_ls_off() { return x(2, 2); }
++  uint64_t q3c_rd4() { return x(6, 4); }
++  uint64_t q3c_rs2_4() { return x(2, 4); }
++  uint64_t q3c_rd3() { return 8 + x(8, 3); }
++  uint64_t q3c_rs1_3() { return 8 + x(5, 3); }
++  uint64_t q3c_rs2_3() { return 8 + x(2, 3); }
++  uint64_t q3c_br_rs1() { return 8 + x(9, 3); }
++  uint64_t q3c_br_rs2() { return 8 + x(6, 3); }
++  uint64_t q3c_br_off() { return x(2, 4); }
++  uint64_t q3c_blez_rs() { return 8 + x(9, 3); }
++  uint64_t q3c_blez_off() { return x(2, 7); }
++
+   uint64_t q3_fp_fd() { return x(6, 4); }
+   uint64_t q3_fp_fs2() { return x(2, 4); }
+   uint64_t q3_fp_base() { return x(4, 2); }
+--- /home/milo/spike-q3/riscv/processor.cc	2026-11-18 16:44:25.524046804 +0800
++++ spike-c/riscv/processor.cc	2026-11-18 17:35:21.536506700 +0800
+@@ -718,18 +718,10 @@
+   auto build_one = [&](const insn_desc_t& desc) {
+     // RVA-E16: only 16-bit RVC and the six Q3 instructions are implemented.
+     static const insn_bits_t q3_matches[][2] = {
+-      {0x0003, 0xf003}, {0x3003, 0xf003}, {0x5003, 0xfe03},
+-      {0x6c03, 0xfc03}, {0x7803, 0xfc03}, {0x8c03, 0xfc03},
+-      {0x9003, 0xfc03}, {0x9403, 0xfc03}, {0x9803, 0xfc03},
+-      {0x9c03, 0xfc03}, {0xd003, 0xfc03}, {0xd403, 0xfc03},
+-      {0xa003, 0xfc03}, {0xa403, 0xfc03}, {0xa803, 0xfc03}, {0xac03, 0xfc03},
+-      {0xb003, 0xfc03}, {0xb403, 0xfc03}, {0xb803, 0xfc03}, {0xbc03, 0xfc03},
+-      {0xc003, 0xfc03}, {0xc403, 0xfc03}, {0xc803, 0xfc03}, {0xcc03, 0xfc03},
+-      {0xd803, 0xfc03}, {0xdc03, 0xfc03},
+-      {0x5203, 0xfe03}, {0x5403, 0xfe03}, {0x5603, 0xfe03},
+-      {0x5803, 0xfe03}, {0x5a03, 0xfe03}, {0x5c03, 0xfe03},
+-      {0x5e03, 0xfe03}, {0xe003, 0xf00f}, {0xe007, 0xf00f},
+-      {0xe00b, 0xf00f}, {0xe00f, 0xf00f}, {0xf003, 0xfc03}};
++      {0x0003, 0xfc03}, {0x0403, 0xfc03},
++      {0x3003, 0xf803}, {0x3803, 0xf803},
++      {0x5003, 0xf003}, {0x6003, 0xf003}, {0x7003, 0xf003},
++      {0x8003, 0xfc03}, {0x8403, 0xfc03}};
+     bool is16 = ((desc.match & 3) != 3);
+     for (auto &q : q3_matches)
+       if (desc.match == q[0] && desc.mask == q[1]) is16 = true;
+--- /home/milo/spike-q3/riscv/riscv.mk.in	2026-11-18 16:44:25.534183269 +0800
++++ spike-c/riscv/riscv.mk.in	2026-11-18 17:35:21.529501100 +0800
+@@ -202,6 +202,15 @@
+ 	c_xori_q3 \
+ 	c_lw_q3 \
+ 	c_sw_q3 \
++	c_sw_c \
++	c_lw_c \
++	c_blez_c \
++	c_blt_c \
++	c_bne_c \
++	c_sub3_c \
++	c_add3_c \
++	c_sub_c \
++	c_add_c \
+ 	c_fadd_q3 \
+ 	c_fsub_q3 \
+ 	c_fmul_q3 \
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_add_c.h	2026-11-18 17:35:21.498714700 +0800
+@@ -0,0 +1 @@
++WRITE_REG(insn.q3c_rd4(), READ_REG(insn.q3c_rd4()) + READ_REG(insn.q3c_rs2_4()));
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_sub_c.h	2026-11-18 17:35:21.498714700 +0800
+@@ -0,0 +1 @@
++WRITE_REG(insn.q3c_rd4(), READ_REG(insn.q3c_rd4()) - READ_REG(insn.q3c_rs2_4()));
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_add3_c.h	2026-11-18 17:35:21.512278800 +0800
+@@ -0,0 +1 @@
++WRITE_REG(insn.q3c_rd3(), READ_REG(insn.q3c_rs1_3()) + READ_REG(insn.q3c_rs2_3()));
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_sub3_c.h	2026-11-18 17:35:21.515496200 +0800
+@@ -0,0 +1 @@
++WRITE_REG(insn.q3c_rd3(), READ_REG(insn.q3c_rs1_3()) - READ_REG(insn.q3c_rs2_3()));
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_bne_c.h	2026-11-18 17:35:21.517507500 +0800
+@@ -0,0 +1,5 @@
++require_extension(EXT_ZC16);
++if (READ_REG(insn.q3c_br_rs1()) != READ_REG(insn.q3c_br_rs2())) {
++  int32_t off = (int32_t)(insn.q3c_br_off() << 28) >> 28;
++  set_pc_and_serialize(pc + off * 2);
++}
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_blt_c.h	2026-11-18 17:35:21.519500300 +0800
+@@ -0,0 +1,5 @@
++require_extension(EXT_ZC16);
++if ((int32_t)READ_REG(insn.q3c_br_rs1()) < (int32_t)READ_REG(insn.q3c_br_rs2())) {
++  int32_t off = (int32_t)(insn.q3c_br_off() << 28) >> 28;
++  set_pc_and_serialize(pc + off * 2);
++}
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_blez_c.h	2026-11-18 17:35:21.521506700 +0800
+@@ -0,0 +1,5 @@
++require_extension(EXT_ZC16);
++if ((int32_t)READ_REG(insn.q3c_blez_rs()) <= 0) {
++  int32_t off = (int32_t)(insn.q3c_blez_off() << 25) >> 25;
++  set_pc_and_serialize(pc + off * 2);
++}
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_lw_c.h	2026-11-18 17:35:21.523499700 +0800
+@@ -0,0 +1,4 @@
++require_extension(EXT_ZC16);
++static const reg_t bases[4] = {8, 9, 2, 3};
++reg_t addr = READ_REG(bases[insn.q3_ls_base()]) + insn.q3_ls_off() * 4;
++WRITE_REG(insn.q3_ls_reg(), MMU.load<int32_t>(addr));
+--- /dev/null	2026-11-18 17:42:43.263469656 +0800
++++ spike-c/riscv/insns/c_sw_c.h	2026-11-18 17:35:21.524499800 +0800
+@@ -0,0 +1,4 @@
++require_extension(EXT_ZC16);
++static const reg_t bases[4] = {8, 9, 2, 3};
++reg_t addr = READ_REG(bases[insn.q3_ls_base()]) + insn.q3_ls_off() * 4;
++MMU.store<uint32_t>(addr, READ_REG(insn.q3_ls_reg()));
