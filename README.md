@@ -66,6 +66,7 @@ See [bench/README.md](bench/README.md) for sources and commands.
 ## Documentation
 
 - [ISA manual (AsciiDoc, RISC-V manual style)](docs/RVM16-ISA-Manual.adoc)
+- [HTML preview of the manual](docs/RVM16-ISA-Manual.html)
 - [Working Markdown notes](docs/RVA-E16-ISA-Manual.md)
 - [Q3 allocation](docs/RVA-E16-Q3-Allocation.md)
 - [RVM16 vs RV32E](docs/RVM16-vs-RV32E.md)

@@ -482,6 +482,8 @@ CSR instructions use f4 = 14, a 4-bit csr4 in bits 11:8, a 4-bit reg4 in bits
 | 11 | C.CSRC csr, rs | CSR = CSR AND NOT rs
 |===
 
+=== 8.1 CSR operations
+
 [[insn-c-csrr]]
 ==== C.CSRR
 

@@ -15,7 +15,9 @@ Build the HTML manual with:
 
     ./build.sh
 
-This requires asciidoctor; the .adoc source is the deliverable.
+Either the Ruby asciidoctor gem or the npm package @asciidoctor/cli can build
+it; the .adoc source is the deliverable.  A prebuilt HTML preview is
+committed as RVM16-ISA-Manual.html.
 
 ## Design notes
 
