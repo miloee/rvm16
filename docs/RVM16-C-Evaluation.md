@@ -102,6 +102,16 @@ ALU block、分支 block、GP/PC block、额外 LD/ST block 的分配，按指�
 这是一个**有界**结果：只证明 block 数量分配在这组频率模型下最优，没有证明 opcode
 字段/格式的全局最优；完整的 MILP 仍未做。
 
+### 2.5 Baseline benchmark runs
+
+- Dhrystone：代码按 rv32emc_zcb_zcmp_zcmt 编译，在标准 Spike 上以
+  RV32IMC_Zcb_Zcmp_Zcmt 运行，RC=0；ELF .text 2206 B（含 crt0/stubs）。
+- CoreMark：同样编译/运行，RC=0；ELF .text 6338 B。ITERATIONS=10，但
+  time_in_secs 被 stub 成 10，只跑最小迭代；时序没有意义。
+- 这两个是 **RV32EC+Zc* baseline 运行**，不是 RVM16-C 二进制；RVM16-C
+  仍是第 2.3 节的静态模型。
+- Linpack 是 double 精度，RVM16-C F32-only，未运行。
+
 ## 3. 待补指标
 
 ### 3.1 Spill 率

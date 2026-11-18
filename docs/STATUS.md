@@ -25,6 +25,14 @@ Date: 2026-11-18
   - docs/RVM16-C-Evaluation.md;
   - docs/Zhihu-RVM16-C.md + figs.
 
+## Baseline benchmark runs
+
+- Dhrystone: RV32EC+Zc* code runs on Spike RV32IMC, RC=0, .text 2206 B.
+- CoreMark: RV32EC+Zc* code runs on Spike RV32IMC, RC=0, .text 6338 B
+  (ITERATIONS=10 but timer stubbed; timing not meaningful).
+- These are baseline runs, not RVM16-C binaries.
+- Linpack: double precision, RVM16-C F32-only; not run.
+
 ## What is not done
 
 - Full LLVM code generator/Clang ABI/libc: only MC exists.
