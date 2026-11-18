@@ -1,6 +1,6 @@
 = The RVM16 Instruction Set Manual
 :doctype: book
-:revnumber: 0.4
+:revnumber: 0.5
 :revdate: 2026-11-18
 :author: The RVM16 Authors
 :toc: left
@@ -128,7 +128,10 @@ mode and virtual memory are outside the scope of this volume.
 === 3.1 Instruction length
 
 Every instruction is 16 bits.  The two least-significant bits select the
-quadrant.  Quadrants 00, 01, and 10 are RVC.  Quadrant 11 is Q3.
+quadrant.  Quadrants 00, 01, and 10 are RVC.  Quadrant 11 is Q3.  The name Q3
+means quadrant 3 of the 2-bit quadrant field; standard RISC-V uses this
+quadrant as the 32-bit instruction escape, while RVM16 redefines it as a
+16-bit space.
 
 === 3.2 Q3 block map
 
@@ -349,11 +352,13 @@ Encoding:
 
 === 5.4 Load and store format
 
-Loads and stores use f4 = 7 or 8, a 2-bit funct2 in bits 11:10, a 3-bit
-register field in bits 9:7 (encoding x8-x15), a 2-bit base selector in bits
-6:5, a 3-bit offset field in bits 4:2, and 0b11.  The base selector encodes
+Loads and stores use f4 = 7 or 8, a 2-bit funct2 in bits 11:10, a 4-bit
+register field in bits 9:6 (encoding x0-x15), a 2-bit base selector in bits
+5:4, a 2-bit offset field in bits 3:2, and 0b11.  The base selector encodes
 0 = fp (x8), 1 = dp (x9), 2 = sp (x2), 3 = gp (x3).  The offset is scaled by
-the access size.
+the access size, giving a 4-byte window for word accesses.  The 4-bit
+register field includes ra (x1), so a non-leaf function can spill and
+reload its return address.
 
 [%autowidth,options="header"]
 |===
@@ -379,7 +384,7 @@ c.lw rd, off(base)
 ----
 
 Description: Loads a 32-bit word from the address base + off*4 and writes it
-to rd.  rd is x8-x15; base is fp, dp, sp, or gp.
+to rd.  rd is x0-x15; base is fp, dp, sp, or gp.
 
 Operation:
 
@@ -393,8 +398,8 @@ Encoding:
 
 [%autowidth]
 |===
-|15:12 |11:10 |9:7 |6:5 |4:2 |1:0
-|0b0111 |0b10 |rd' |base |off |0b11
+|15:12 |11:10 |9:6 |5:4 |3:2 |1:0
+|0b0111 |0b10 |rd |base |off |0b11
 |===
 
 == 6. M Extension
@@ -563,7 +568,7 @@ for argument passing or allocation.
 | 0-4 | CR3 | rd[5] at 11:7, rs2[5] at 6:2
 | 5 | CA3 | funct3 at 11:9, rd' at 8:6, rs2' at 5:3
 | 6 | CI3 | funct2 at 11:10, rd[4] at 9:6, imm[4] at 5:2
-| 7-8 | LD/ST | funct2 at 11:10, reg' at 9:7, base at 6:5, off at 4:2
+| 7-8 | LD/ST | funct2 at 11:10, reg[4] at 9:6, base at 5:4, off[2] at 3:2
 | 9-13 | FP | funct2 at 11:10, fd[4] at 9:6, fs2[4] at 5:2
 | 14 | CSR | csr4 at 11:8, reg4 at 7:4, op2 at 3:2
 | 15 | SYS | imm10 at 11:2

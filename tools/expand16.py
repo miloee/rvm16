@@ -45,8 +45,25 @@ def mv(dst, src):
     return ["  c.mv %s, %s" % (dst, src)]
 
 
+def li32(reg, value):
+    """Build a 32-bit constant with c.li/c.slli/c.addi (5-bit chunks)."""
+    value &= 0xFFFFFFFF
+    signed = value if value < 0x80000000 else value - 0x100000000
+    if -32 <= signed <= 31:
+        return ["  c.li %s, %d" % (reg, signed)]
+    out = ["  c.li %s, %d" % (reg, value >> 30)]
+    for shift in (25, 20, 15, 10, 5, 0):
+        out.append("  c.slli %s, 5" % reg)
+        chunk = (value >> shift) & 31
+        if chunk:
+            out.append("  c.addi %s, %d" % (reg, chunk))
+    return out
+
+
 def label(name):
-    return name if name.startswith(".L") else ".L" + name
+    if name.startswith(".L") or name[:1].isdigit():
+        return name
+    return ".L" + name
 
 
 def expand(op, rest):
@@ -60,7 +77,9 @@ def expand(op, rest):
     a = [x.strip() for x in rest.split(",")]
 
     if op == "li":
-        check(a[0])
+        if a[0] not in ALLOWED and a[0] not in ("sp", "ra"):
+            raise SystemExit("register %s cannot hold li" % a[0])
+        return li32(a[0], int(a[1], 0))
         return ["  c.li %s, %s" % (a[0], a[1])]
     if op == "mv":
         return mv(a[0], a[1])
