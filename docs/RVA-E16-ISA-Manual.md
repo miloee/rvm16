@@ -587,9 +587,11 @@ The Q3 instructions are assembled with:
     llvm-mc -triple=riscv32 -mattr=+c,+f,+zc16q3
 
 c.mul is the Zcb instruction, so add +m (or +zmmul) and +zcb when a kernel
-uses it.  The CA3 M block (c.mulh/mulhsu/mulhu/div/divu/rem/remu) is also
-implemented.  The disassembler handles f4 0-8 (CR3 shifts/compare, c.xori,
-c.lw/c.sw); M/FP/CSR/SYS decode is still pending.
+uses it.  The CA3 M block (c.mulh/mulhsu/mulhu/div/divu/rem/remu) and the
+CSR block (c.csrr/csrw/csrs/csrc) are also implemented.  The LLVM CSR syntax
+currently takes the numeric csr4 (for example c.csrr a0, 8 for mscratch);
+CSR names are not parsed yet.  The disassembler handles f4 0-8 (CR3
+shifts/compare, c.xori, c.lw/c.sw); M/FP/CSR/SYS decode is still pending.
 
 ### 12.2 Spike
 
@@ -597,8 +599,9 @@ c.lw/c.sw); M/FP/CSR/SYS decode is still pending.
 
 The PoC Spike is strict 16-bit: insn_length is forced to 2 and 32-bit
 instructions are filtered out of the opcode map.  It executes the integer
-slice, the CA3 M block, and the 20 F32 Q3 operations.  The reset PC must be
-set explicitly because Spike's boot ROM contains 32-bit code.
+slice, the CA3 M block, the CSR block, and the 20 F32 Q3 operations.  The
+reset PC must be set explicitly because Spike's boot ROM contains 32-bit
+code.
 
 ### 12.3 C to Q3 prototype
 

@@ -149,10 +149,10 @@ index 9c977dac23..9dcb253186 100644
  
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
 new file mode 100755
-index 0000000000..3a5a7c45da
+index 0000000000..9fc4fe3933
 --- /dev/null
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,270 @@
 +//===-- RISCVInstrInfoQ3.td - RVA-E16 Q3 instructions --------*- tablegen -*-===//
 +//
 +// Q3: bits[1:0] = 11, 16-bit instructions (RVA-E16).
@@ -367,6 +367,61 @@ index 0000000000..3a5a7c45da
 +def C_DIVU_Q3   : Q3_CA<5, "c.divu">;
 +def C_REM_Q3    : Q3_CA<6, "c.rem">;
 +def C_REMU_Q3   : Q3_CA<7, "c.remu">;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CSRR : RVInst16<(outs GPR4:$rd), (ins uimm4:$csr),
++                         "c.csrr", "$rd, $csr", [], InstFormatOther> {
++  bits<4> rd;
++  bits<4> csr;
++  let Inst{15-12} = 0b1110;
++  let Inst{11-8} = csr;
++  let Inst{7-4} = rd;
++  let Inst{3-2} = 0b00;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CSRW : RVInst16<(outs), (ins uimm4:$csr, GPR4:$rs),
++                         "c.csrw", "$csr, $rs", [], InstFormatOther> {
++  bits<4> csr;
++  bits<4> rs;
++  let Inst{15-12} = 0b1110;
++  let Inst{11-8} = csr;
++  let Inst{7-4} = rs;
++  let Inst{3-2} = 0b01;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CSRS : RVInst16<(outs), (ins uimm4:$csr, GPR4:$rs),
++                         "c.csrs", "$csr, $rs", [], InstFormatOther> {
++  bits<4> csr;
++  bits<4> rs;
++  let Inst{15-12} = 0b1110;
++  let Inst{11-8} = csr;
++  let Inst{7-4} = rs;
++  let Inst{3-2} = 0b10;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CSRC : RVInst16<(outs), (ins uimm4:$csr, GPR4:$rs),
++                         "c.csrc", "$csr, $rs", [], InstFormatOther> {
++  bits<4> csr;
++  bits<4> rs;
++  let Inst{15-12} = 0b1110;
++  let Inst{11-8} = csr;
++  let Inst{7-4} = rs;
++  let Inst{3-2} = 0b11;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def C_CSRR_Q3 : Q3_CSRR;
++def C_CSRW_Q3 : Q3_CSRW;
++def C_CSRS_Q3 : Q3_CSRS;
++def C_CSRC_Q3 : Q3_CSRC;
 +}
 diff --git a/llvm/lib/Target/RISCV/RISCVRegisterInfo.td b/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
 index 58af1f863f..7ab52d9267 100644
