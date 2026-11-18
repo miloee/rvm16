@@ -49,8 +49,9 @@ byte for byte.  The baseline is:
 * Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;
 * Zcmt is optional for M/F profiles, mandatory for the RVM16-C-E (Zce)
   profile: cm.jt index 0-31, cm.jalt index 32-255, using the jvt CSR;
-* Zcd requires D/FLEN=64; RVM16-C is F32-only, so c.fld/c.fsd are not
-  applicable.  Adding D would change the F32-only premise and the FP ABI.
+* Zcd is not enabled in the F32 profiles.  Its standard RVC encodings are
+  left untouched and reserved for a future D-capable RVM16-C-D profile;
+  enabling it requires FLEN=64 and D, which is a separate profile.
 * RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.
 
 RVM16-C does not redefine any RVC instruction.  Its new instructions use
@@ -256,8 +257,8 @@ method and caveats.
 * Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.
 * Zcmp: cm.push {ra,s0-s7}, -48 / cm.pop tested (x10=7).
 * Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.
-* Zcmt: cm.jt 0-31 / cm.jalt 32-255 encodings verified with +zcmt;
-  runtime needs jvt and a table, not tested.
+* Zcmt: cm.jt 0-31 / cm.jalt 32-255 verified; runtime tested with
+  jvt=0x80000240 (64-byte aligned), cm.jt 0 jumped to the target, RC=0.
 * LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
   assemble and run.
 * No full LLVM backend or Clang ABI; no CoreMark binary yet.
@@ -295,6 +296,7 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.
 | RVM16-C-M | I, M, C v2.0, Zcb, Zcmp, Zicsr | Zcmt, Zcf (no F)
 | RVM16-C-F | I, M, F, C v2.0, Zcb, Zcmp, Zcf | Zcmt
 | RVM16-C-E | I, M, C v2.0, Zcb, Zcmp, Zcmt | Zcf optional
+| RVM16-C-D (future) | I, M, D, C v2.0, Zcb, Zcmp, Zcd | Zcmt
 |===
 
 F32 uses 16 FP registers f0-f15.  Zcf compressed loads/stores use f8-f15;
@@ -354,9 +356,9 @@ RVM16-C avoids encoding conflicts by construction:
 | quadrant 00/01/10 | C v2.0, Zcb, Zcmp, Zcmt, Zcf | inherit standard encodings; never redefine a used pattern
 | quadrant 11 | Q3 | all new RVM16-C instructions; no RVC instruction uses this quadrant
 | Zcmp rlist | quadrant 10 reserved | x8-x15 only (s0-s7); s8-s11 do not exist
-| Zcmt | quadrant 10 reserved | jvt table; cm.jt 0-31, cm.jalt 32-255
+| Zcmt | quadrant 10 reserved | jvt table (64-byte aligned); cm.jt 0-31, cm.jalt 32-255
 | Zcf | quadrant 00/10 reserved | f8-f15; FLEN=32
-| Zcd | none | requires D/FLEN=64, not applicable
+| Zcd | reserved | not enabled in F32; encodings left for a D-capable profile
 |===
 
 Rules:
@@ -367,8 +369,8 @@ Rules:
 4. With 16 GPR, any RVC or Zcmp form naming x16-x31 or s8-s11 is illegal.
 5. The assembler uses distinct Q3 mnemonics (c.addc, c.bnec, c.lwc, ...) so
    Q3 and RVC mnemonics cannot be confused.
-6. Zcf compressed FP loads/stores use f8-f15; Zcd is excluded because the ISA
-   is F32-only.
+6. Zcf compressed FP loads/stores use f8-f15; Zcd is not enabled in F32
+   profiles, but its encodings are left reserved for a D-capable profile.
 
 == Appendix A. Revision History
 
