@@ -116,8 +116,18 @@ def expand(op, rest):
         return ["  c.li %s, 0" % t, "  c.slt %s, %s" % (t, rs),
                 "  c.beqz %s, %s" % (t, label(target))]
 
+    if op in ("beqz", "bnez"):
+        rs, target = a[0], a[1]
+        check(rs)
+        return ["  c.%s %s, %s" % (op, rs, label(target))]
+
     if op in ("bne", "beq"):
         rs1, rs2, target = a[0], a[1], a[2]
+        if rs1 in ("zero", "x0") or rs2 in ("zero", "x0"):
+            rs = rs2 if rs1 in ("zero", "x0") else rs1
+            check(rs)
+            return ["  c.%s %s, %s" % ("bnez" if op == "bne" else "beqz",
+                                        rs, label(target))]
         check(rs1); check(rs2)
         t = pick_temp({rs1, rs2})
         out = mv(t, rs1) + ["  c.xor %s, %s" % (t, rs2)]
