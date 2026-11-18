@@ -47,6 +47,21 @@ pack_1：584 条指令，37 条栈访问（6.3%），88 条 lui/auipc（15.1%）
 
 Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者从 ~12 B 降到 2 B，lwpc 让后者从 ~8 B 降到 2 B（加 pool）。粗略估计可省 300-400 B，C 可能从 2508 降到 2100-2200；需要模型确认。
 
+### 2.3 静态模型结果（tools/model_c.py）
+
+| benchmark | RV32EC+Zc* actual | RVM16-C model | delta |
+|---|---:|---:|---:|
+| Dhrystone pack1+2 | 2508 | 1948 | -22.4% |
+| CoreMark core（5 个 .c） | 6398 | 6532 | +2.1% |
+
+- Dhrystone 模型里 GP=28、字符串=53、其他 lui=7；加上外部 call stub（malloc/printf 等约 6 个，~120 B）后约 2068 B，仍比 2508 小 17%。
+- CoreMark core 的 GP=0、字符串=32、栈访问 273 条；C 模型与 actual 基本持平（+2.1%），模型本身对 CoreMark actual 高估约 11%，所以真实值可能在 ±5-10%。
+- Dhrystone 栈访问 37/598 = 6.2%；CoreMark 栈访问 273/2328 = 11.7%。
+- 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（按模型的距离/寄存器判断），每条 +2 B；CoreMark 的 matrix/list 分支较多，需要更精确的距离分析。
+- 结论：GP/PC 让 Dhrystone 这类全局/字符串密集代码明显变小；CoreMark 这类栈/结构体密集代码大约持平，不能说普遍更小。
+
+模型不是编译器：actual 列已用 assemble 后的 .text 校准到 Dhrystone 2508；CoreMark actual 列直接取 clang 对象 .text，模型对 CoreMark 的指令尺寸仍有约 11% 高估，所以 CoreMark 的数字只作趋势参考。
+
 ## 3. 待补指标
 
 ### 3.1 Spill 率
