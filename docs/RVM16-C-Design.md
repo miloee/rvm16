@@ -9,7 +9,7 @@ RVM16-C 是一个**兼容 RVC、no-flags、16 GPR、严格 16 位**的 RISC-V �
 和 RVM16-A 的区别：
 
 - A：32 GPR、2-address、无融合分支；通用 C 反而比 RVGC 大。
-- C：16 GPR、2-address 为主 + 2 条三地址、融合 bne/blt/blez；用低 8 位字段换分支和指针基址。
+- C：16 GPR、2-address 为主 + GP-relative load/store、融合 bne/blt/blez；用低 8 位字段换分支和指针基址。
 
 ## 2. 约束
 
@@ -36,7 +36,7 @@ RVM16-C 是一个**兼容 RVC、no-flags、16 GPR、严格 16 位**的 RISC-V �
 | x0 | zero |
 | x1 | ra |
 | x2 | sp |
-| x3 | gp（可选） |
+| x3 | gp（GP-relative 必需） |
 | x4 | tp（可选） |
 | x5-x6 | 临时/保留 |
 | x7 | 冷 CSR 地址 scratch，不分配 |
@@ -51,6 +51,7 @@ ABI（RVM16-C ILP32F-16）：
 - F32 参数 f0-f7，返回 f0；f8-f15 callee-saved；
 - s0/s1 只有在函数用到时才保存；
 - sp/ra 用 RVC 和 Q3 的 4-bit load/store 保存；
+- gp = x3 指向 small-data 段起始，启动时设一次；GP-relative off 范围 0..252 B；
 - 栈 16 B 对齐；
 - 变参：a0-a5 + f0-f7；没有 x16+；
 - 分支操作数必须在 x8-x15，编译器负责把分支用值放低 8 个。
@@ -68,7 +69,7 @@ Q3 的 16 个 f4 block：
 | 0 | ALU-12 A | funct2 + rd4 + rs2_4：add/sub/and/or |
 | 1 | ALU-12 B | funct2 + rd4 + rs2_4：xor/sll/srl/sra |
 | 2 | ALU-12 C | funct2 + rd4 + rs2_4：slt/sltu + 2 reserved |
-| 3 | 三地址 | funct1 + rd3 + rs1_3 + rs2_3：add/sub |
+| 3 | GP-relative | funct1 + reg3 + off6：lw/sw（gp=x3） |
 | 4 | M | funct3 + rd3 + rs2_3：mulh/mulhsu/mulhu/div/divu/rem/remu |
 | 5 | c.bne | rs1_3 + rs2_3 + off4 |
 | 6 | c.blt | rs1_3 + rs2_3 + off4；bge 交换 rs1/rs2 |
@@ -106,18 +107,18 @@ rd、rs2 是 x0-x15；2-address：rd = rd op rs2。
 | 2 | 1 | sltu rd, rs2 | rd = (unsigned rd < unsigned rs2) |
 | 2 | 2-3 | reserved | |
 
-## 7. 三地址（f4=3）
+## 7. GP-relative load/store（f4=3）
 
 编码：
 
-    word = (3 << 12) | (funct1 << 11) | (rd3 << 8) | (rs1_3 << 5) | (rs2_3 << 2) | 0b11
+    word = (3 << 12) | (funct1 << 11) | (rd3 << 8) | (off6 << 2) | 0b11
 
-rd3/rs1_3/rs2_3 是 x8-x15；funct1：0 add，1 sub。
+- rd3 是 x8-x15；
+- funct1：0 = lw，1 = sw；
+- off6 是无符号 0-63，按 4 B 缩放，范围 0..252 B，基址固定为 gp = x3；
+- gp 在启动时设一次，指向 small-data 段起始。
 
-- add rd, rs1, rs2：rd = rs1 + rs2；
-- sub rd, rs1, rs2：rd = rs1 - rs2。
-
-一个 block 只有 2 条，这是 3-bit 字段的代价；如果后续 benchmark 证明 and/or/xor 也需要三地址，可以从 ALU-12 砍一个 block 再加 2 条。
+原来的三地址 add/sub 被这个 block 替换：FIR/sum 的 ALU 都是 rd==rs1/rs2，用不到三地址；Dhrystone 的 88 条 lui/auipc 更需要 gp 相对访问。
 
 ## 8. 融合分支（f4=5,6,7）
 
@@ -206,7 +207,8 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 | mv rd, rs | c.mv（x0-x15） | 2 |
 | li rd, imm6 | c.li | 2 |
 | li rd, imm32 | 5-bit chunk 构造，8-13 条 | 16-26 |
-| add rd, rs1, rs2 | 若 rd==rs1/rs2：2-address；否则三地址或 mv+2addr | 2-4 |
+| add rd, rs1, rs2 | 若 rd==rs1/rs2：2-address；否则 mv+2addr | 2-4 |
+| lw/sw rd, off(gp) | c.lwgp/c.swgp，off 0..252 | 2 |
 | beq rs1, rs2, L | xor + c.beqz | 4 |
 | bge rs1, rs2, L | c.blt rs2, rs1, L | 2 |
 | bgeu/bltu | sltu + c.beqz/c.bnez | 6 |
@@ -227,7 +229,7 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 
 ## 16. 验证计划
 
-1. Spike：ALU-12、三地址 add/sub、bne/blt/blez、LD/ST、M、CSR/SYS（F32 复用）；
+1. Spike：ALU-12、GP-relative lw/sw、bne/blt/blez、LD/ST、M、CSR/SYS（F32 复用）；
 2. LLVM MC：编码 + 分支 fixup（off4/off7 的 RVC 风格重定位）；
 3. expand16：支持新编码和分支；
 4. 基准：FIR、sum、memcpy、CRC、index 循环、状态机、全局访问；
@@ -237,7 +239,7 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 ## 17. 与 Thumb / RVGC / RV32EC 的对比
 
 - Thumb-1：16 GPR，低 8 个 r0-r7 用于 16 位形式；有 3-address ADD/SUB；用 flags + Bcc 做条件分支。
-- RVM16-C：16 GPR，低 8 个 x8-x15 用于分支；只有 add/sub 三地址；no-flags，用融合 bne/blt/blez。
+- RVM16-C：16 GPR，低 8 个 x8-x15 用于分支；GP-relative lw/sw；no-flags，用融合 bne/blt/blez。
 - RVGC：32 位三地址 + RVC；code size 基准。
 - RV32EC+Zc*：16 GPR + Zcmp/Zcmt；RVM16-C 的直接竞争对手，工具链成熟。
 
@@ -245,7 +247,7 @@ imm10：0 ecall，1 ebreak，2 mret，3 wfi，4 fence，5 fence.i。
 
 - 16 GPR 仍会 spill；
 - 分支 off4 只有 ±16 B，长循环要 trampoline；
-- 没有 GP-relative 大偏移，全局访问可能偏大；
+- GP-relative 只有 252 B 窗口，超出要 bump gp 或用 li32；
 - 没有 beq 融合，beq 4 B；
 - beq/bgeu/bltu 仍是 compare+branch；
 - ABI/LLVM CC/libc 是工具链级工作；

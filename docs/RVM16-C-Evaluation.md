@@ -35,7 +35,16 @@ pack_1：584 条指令，37 条栈访问（6.3%），88 条 lui/auipc（15.1%）
 
 这是 C 的硬伤：C 没有 lui/auipc，每个全局地址要么 li32（8-13 条，16-26 B），要么 gp 相对（当前 off2 只有 4 B 窗口）。RV32EC 的 lui+addi 是 8 B；静态 88 处地址构造，C 会多出约 700-1600 B，Dhrystone 很可能超过 3000 B，输给 RV32EC 的 2508 B。
 
-所以“C 在当前 block map 下最优”不成立；缺的是 GP-relative/literal pool。要救 Dhrystone，必须腾一个 block 做 gp 相对访问（例如 funct1 + reg3 + off6，±256 B 的 lw/sw），代价是砍一个 ALU 或分支 block，再重新评估。
+所以“C 在当前 block map 下最优”不成立；缺的是 GP-relative/literal pool。
+
+### 2.2 GP-relative 已加入
+
+- f4=3 的三地址 block 已替换为 GP-relative：funct1 + reg3 + off6，0..252 B，基址 gp=x3；
+- 新增 c.lwgp/c.swgp；
+- Spike 测试：gp=0x80000200，加载 5/7，x8=12，RC=0；
+- FIR/sum 不受影响，仍是 26/20，x8=70/10。
+
+Dhrystone 的 88 条 lui/auipc 里，落在 gp+252 B 的全局访问可以变成 2 B 的 lwgp/swgp；仍需模型确认能省多少。
 
 ## 3. 待补指标
 
