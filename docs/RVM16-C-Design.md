@@ -25,7 +25,9 @@ RVM16-C 是一个**兼容 RVC、no-flags、16 GPR、严格 16 位**的 RISC-V �
 
 - C v2.0：quadrant 00/01/10 的编码逐字节不变。
 - Zcb 必选：c.mul、c.lbu、c.lh、c.lhu、c.sb、c.sh、c.zext.b/h/w、c.sext.b/h、c.not，使用标准 Zcb 编码；RVM16-C 的字节/半字访问依赖它。
-- Zcmp/Zcmt 可选：push/pop、table jump 使用标准编码，RVM16-C 不重新定义。
+- Zcmp 必选：cm.push/pop/popret/popretz，作为 save-all prologue/epilogue；
+- Zcf 必选：c.flw/c.fsw/c.flwsp/c.fswsp，用于 F32 compressed load/store；
+- Zcmt 可选：cm.jt/cm.jalt，用于 switch table。
 - Q3 助记符虽然带 c. 前缀，但编码都在 quadrant 11；没有改任何 RVC 编码。
 - RVC 中寻址 x16-x31 的形式（例如 c.lwsp rd=x20）在 16 GPR 下非法。
 

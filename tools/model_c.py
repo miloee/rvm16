@@ -75,10 +75,7 @@ def c_cost(m, ops, off, labels):
     if m.startswith('c.'):
         return 2
     if m.startswith('cm.'):
-        if m in ('cm.push', 'cm.pop'):
-            return 8
-        if m in ('cm.popret', 'cm.popretz'):
-            return 8
+        # Zcmp is part of the RVM16-C baseline: push/pop are 2 bytes.
         return 2
     if m == 'li':
         v = imm(ops[-1]) if ops else None

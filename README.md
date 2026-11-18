@@ -83,8 +83,8 @@ redefined as a new ISA.
 
 - Spike-C: FIR 26 B, sum 20 B, x8=70/10;
 - LLVM MC: distinct mnemonics under +zc16q3, branch label fixups, same sizes;
-- Dhrystone model: 2508 -> 1948 B (-22%; ~2068 with stubs);
-- CoreMark core: 6398 -> 6532 B (+2.1%, parity).
+- Dhrystone model: 2508 -> 1906 B (-24%; ~2026 with stubs);
+- CoreMark core: 6398 -> 6316 B (-1.3%, with Zcmp).
 - [Vertical slice status](docs/Q3-Vertical-Slice-Status.md)
 - [Zhihu draft](docs/Zhihu-Article.md)
 

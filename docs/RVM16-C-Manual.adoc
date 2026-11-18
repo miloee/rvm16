@@ -44,7 +44,10 @@ byte for byte.  The baseline is:
 * C v2.0;
 * Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h/w,
   c.sext.b/h, c.not;
-* Zcmp/Zcmt are optional and use their standard encodings;
+* Zcmp is mandatory: cm.push/pop/popret/popretz, used as a save-all
+  prologue/epilogue;
+* Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;
+* Zcmt is optional: cm.jt/cm.jalt for switch tables;
 * RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.
 
 RVM16-C does not redefine any RVC instruction.  Its new instructions use
@@ -81,6 +84,12 @@ quadrant 11 only.
 
 The first two pointer arguments naturally land in x8/x9, which are Q3 base
 registers, so loads do not need a preceding c.mv.
+
+Zcmp push/pop addresses architectural x8-x15 plus ra.  C can use
+cm.push {ra, s0-s1, a0-a5}, -16 as a save-all prologue even though its ABI
+names differ: every live data register is in x8-x15, so over-saving is
+correct but may cost stack traffic, not code size.  Zcf compressed loads use
+f8-f15; allocate FP temporaries there when possible.
 
 == 4. Encoding Framework
 
@@ -228,8 +237,8 @@ instructions are 16 bits, mepc always points at a 2-byte boundary.
 | Benchmark | RV32EC+Zc* | RVM16-C (model) | Delta
 | FIR | 30 | 26 | -13.3%
 | sum | 24 | 20 | -16.7%
-| Dhrystone | 2508 | 1948 (2068 with stubs) | -17% to -22%
-| CoreMark core | 6398 | 6532 | +2.1%
+| Dhrystone | 2508 | 1906 (2026 with stubs) | -19% to -24%
+| CoreMark core | 6398 | 6316 | -1.3%
 |===
 
 Dhrystone has 29 .L_MergedGlobals and 53 .L.str references; GP/PC-relative
@@ -242,6 +251,7 @@ method and caveats.
 == 14. Implementation Status
 
 * Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.
+* Zcmp: cm.push {ra,s0-s7}, -48 / cm.pop tested (x10=7).
 * LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
   assemble and run.
 * No full LLVM backend or Clang ABI; no CoreMark binary yet.

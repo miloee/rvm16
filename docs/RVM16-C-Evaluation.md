@@ -51,11 +51,11 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 
 | benchmark | RV32EC+Zc* actual | RVM16-C model | delta |
 |---|---:|---:|---:|
-| Dhrystone pack1+2 | 2508 | 1948 | -22.4% |
-| CoreMark core（5 个 .c） | 6398 | 6532 | +2.1% |
+| Dhrystone pack1+2 | 2508 | 1906 | -24.0% |
+| CoreMark core（5 个 .c） | 6398 | 6316 | -1.3% |
 
-- Dhrystone 模型里 GP=28、字符串=53、其他 lui=7；加上外部 call stub（malloc/printf 等约 6 个，~120 B）后约 2068 B，仍比 2508 小 17%。
-- CoreMark core 的 GP=0、字符串=32、栈访问 273 条；C 模型与 actual 基本持平（+2.1%），模型本身对 CoreMark actual 高估约 11%，所以真实值可能在 ±5-10%。
+- Dhrystone 模型里 GP=28、字符串=53、其他 lui=7；加上外部 call stub（malloc/printf 等约 6 个，~120 B）后约 2026 B，仍比 2508 小 19%。
+- CoreMark core 的 GP=0、字符串=32、栈访问 273 条；C 模型比 actual 小 1.3%（Zcmp 已计入），模型本身对 CoreMark actual 高估约 11%，所以真实值可能在 ±5-10%。
 - Dhrystone 栈访问 37/598 = 6.2%；CoreMark 栈访问 273/2328 = 11.7%。
 - 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（按模型的距离/寄存器判断），每条 +2 B；CoreMark 的 matrix/list 分支较多，需要更精确的距离分析。
 - 结论：GP/PC 让 Dhrystone 这类全局/字符串密集代码明显变小；CoreMark 这类栈/结构体密集代码大约持平，不能说普遍更小。
@@ -68,10 +68,11 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - FIR/sum 由 llvm-mc 汇编，函数 26/20 B，Spike-C 运行 x8=70/10；
 - 分支 label fixup 已实现（fixup_riscv_zvmc_branch4/7），FIR/sum 用 .Lloop/.Lend 汇编；LD/ST 语法是 c.lwc rd, off, base；
 - A 的 +zc16q3 仍可用（c.sll 编码 0x052f）。
+- Zcmp 已实测：cm.push {ra,s0-s7}, -48 / cm.pop，Spike-C x10=7，RC=0。
 
 ## 6. 有界结论（当前）
 
-- C 在 Dhrystone 模型上比 RV32EC+Zc* 小 17-22%；CoreMark 约持平（+2.1%，模型误差 ±5-10%）。
+- C 在 Dhrystone 模型上比 RV32EC+Zc* 小 19-24%；CoreMark 小 1.3%（模型误差 ±5-10%，可视作持平）。
 - 这不是全局最优证明：只比较了 C 与 RV32EC，没有 MILP 下界，也没有把 A/B 全量跑完。
 - 能说的有界结论是：**在 16 GPR、2-address 为主、3 个融合分支、GP/PC-relative、RVC 不变的约束下，C 是已评估方案中对 Dhrystone 最好的；CoreMark 没有优势。**
 - 真正的“最优”还需要 MILP + 指令频率，这是下一步。
