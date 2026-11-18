@@ -70,6 +70,21 @@ See [bench/README.md](bench/README.md) for sources and commands.
 - [Working Markdown notes](docs/RVA-E16-ISA-Manual.md)
 - [Q3 allocation](docs/RVA-E16-Q3-Allocation.md)
 - [RVM16 vs RV32E](docs/RVM16-vs-RV32E.md)
+- [RVM16-C proposal manual (16 GPR, GP/PC, fused branches)](docs/RVM16-C-Manual.adoc)
+- [RVM16-C HTML preview](docs/RVM16-C-Manual.html)
+- [RVM16-C evaluation: Dhrystone/CoreMark, spill/trampoline/globals](docs/RVM16-C-Evaluation.md)
+- [RVM16-C Zhihu article draft](docs/Zhihu-RVM16-C.md)
+
+## RVM16-C status
+
+RVM16-C is the 16-GPR variant: ALU-12, fused bne/blt/blez, GP/PC-relative
+load/store, no flags, RVC-compatible quadrants 00/01/10, quadrant 11
+redefined as a new ISA.
+
+- Spike-C: FIR 26 B, sum 20 B, x8=70/10;
+- LLVM MC: distinct mnemonics under +zc16q3, branch label fixups, same sizes;
+- Dhrystone model: 2508 -> 1948 B (-22%; ~2068 with stubs);
+- CoreMark core: 6398 -> 6532 B (+2.1%, parity).
 - [Vertical slice status](docs/Q3-Vertical-Slice-Status.md)
 - [Zhihu draft](docs/Zhihu-Article.md)
 
