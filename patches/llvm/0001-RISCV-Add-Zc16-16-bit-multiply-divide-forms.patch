@@ -1,0 +1,182 @@
+diff --git a/llvm/lib/Target/RISCV/RISCVFeatures.td b/llvm/lib/Target/RISCV/RISCVFeatures.td
+index 4025b39401..9e7ba85b68 100644
+--- a/llvm/lib/Target/RISCV/RISCVFeatures.td
++++ b/llvm/lib/Target/RISCV/RISCVFeatures.td
+@@ -472,6 +472,16 @@ def HasStdExtZcmop : Predicate<"Subtarget->hasStdExtZcmop()">,
+                      AssemblerPredicate<(all_of FeatureStdExtZcmop),
+                          "'Zcmop' (Compressed May-Be-Operations)">;
+ 
++// Zc16: 16-bit forms for integer multiply/divide operations that are not
++// already covered by Zcb's c.mul.  The encoding reuses the C.FLD slot, so
++// Zc16 requires that the D extension is not implemented.
++def FeatureStdExtZc16
++    : RISCVExtension<1, 0,
++                     "16-bit integer multiply/divide forms">;
++def HasStdExtZc16 : Predicate<"Subtarget->hasStdExtZc16()">,
++                    AssemblerPredicate<(all_of FeatureStdExtZc16),
++                        "'Zc16' (16-bit integer multiply/divide forms)">;
++
+ // Bitmanip Extensions
+ 
+ def FeatureStdExtZba
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfo.td b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+index ffb0d5eeae..9c977dac23 100644
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfo.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+@@ -2394,6 +2394,7 @@ include "RISCVInstrInfoP.td"
+ // Compressed
+ include "RISCVInstrInfoC.td"
+ include "RISCVInstrInfoZc.td"
++include "RISCVInstrInfoZc16.td"
+ include "RISCVInstrInfoZcmop.td"
+ include "RISCVInstrInfoZclsd.td"
+ 
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoZc16.td b/llvm/lib/Target/RISCV/RISCVInstrInfoZc16.td
+new file mode 100644
+index 0000000000..9f0c64705f
+--- /dev/null
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoZc16.td
+@@ -0,0 +1,107 @@
++//===-- RISCVInstrInfoZc16.td - RISC-V 'Zc16' instructions --*- tablegen -*-===//
++//
++// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
++// See https://llvm.org/LICENSE.txt for license information.
++// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
++//
++//===----------------------------------------------------------------------===//
++//
++// Zc16 provides 16-bit two-address forms for the M-extension operations that
++// are not already available as c.mul (which is part of Zcb).
++//
++// Encoding: quadrant 0, funct3=001, i.e. the code point reclaimed from C.FLD
++// when D is not implemented.
++//
++//  15 14 13 | 12 .. 8 | 7 .. 3 | 2 .. 0
++//   0  0  1 |   rd    |  rs2   |  op
++//
++// Semantics: rd = rd <op> rs2
++//
++//===----------------------------------------------------------------------===//
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class RVInst16CM<bits<3> op, dag outs, dag ins, string opcodestr,
++                 string argstr>
++    : RVInst16<outs, ins, opcodestr, argstr, [], InstFormatOther> {
++  bits<5> rd;
++  bits<5> rs2;
++
++  let Inst{15-13} = 0b001;
++  let Inst{12-8} = rd;
++  let Inst{7-3} = rs2;
++  let Inst{2-0} = op;
++}
++
++let Predicates = [HasStdExtZc16, HasStdExtM, IsRV32] in {
++
++def C_MULH : RVInst16CM<0b001, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                        "c.mulh", "$rd, $rs2">,
++             Sched<[WriteIMul, ReadIMul, ReadIMul]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_MULHSU : RVInst16CM<0b010, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                          "c.mulhsu", "$rd, $rs2">,
++               Sched<[WriteIMul, ReadIMul, ReadIMul]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_MULHU : RVInst16CM<0b011, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                         "c.mulhu", "$rd, $rs2">,
++              Sched<[WriteIMul, ReadIMul, ReadIMul]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_DIV : RVInst16CM<0b100, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                       "c.div", "$rd, $rs2">,
++            Sched<[WriteIDiv, ReadIDiv, ReadIDiv]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_DIVU : RVInst16CM<0b101, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                        "c.divu", "$rd, $rs2">,
++             Sched<[WriteIDiv, ReadIDiv, ReadIDiv]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_REM : RVInst16CM<0b110, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                       "c.rem", "$rd, $rs2">,
++            Sched<[WriteIDiv, ReadIDiv, ReadIDiv]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++def C_REMU : RVInst16CM<0b111, (outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++                        "c.remu", "$rd, $rs2">,
++             Sched<[WriteIDiv, ReadIDiv, ReadIDiv]> {
++  let Constraints = "$rd = $rd_wb";
++}
++
++} // Predicates = [HasStdExtZc16, HasStdExtM]
++
++let Predicates = [HasStdExtZc16, HasStdExtM, IsRV32] in {
++
++def : CompressPat<(MULH GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_MULH GPR:$rs1, GPR:$rs2)>;
++let isCompressOnly = true in
++def : CompressPat<(MULH GPR:$rs1, GPR:$rs2, GPR:$rs1),
++                  (C_MULH GPR:$rs1, GPR:$rs2)>;
++
++def : CompressPat<(MULHSU GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_MULHSU GPR:$rs1, GPR:$rs2)>;
++
++def : CompressPat<(MULHU GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_MULHU GPR:$rs1, GPR:$rs2)>;
++let isCompressOnly = true in
++def : CompressPat<(MULHU GPR:$rs1, GPR:$rs2, GPR:$rs1),
++                  (C_MULHU GPR:$rs1, GPR:$rs2)>;
++
++def : CompressPat<(DIV GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_DIV GPR:$rs1, GPR:$rs2)>;
++def : CompressPat<(DIVU GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_DIVU GPR:$rs1, GPR:$rs2)>;
++def : CompressPat<(REM GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_REM GPR:$rs1, GPR:$rs2)>;
++def : CompressPat<(REMU GPR:$rs1, GPR:$rs1, GPR:$rs2),
++                  (C_REMU GPR:$rs1, GPR:$rs2)>;
++
++} // Predicates = [HasStdExtZc16, HasStdExtM]
+diff --git a/llvm/test/MC/RISCV/zc16-valid.s b/llvm/test/MC/RISCV/zc16-valid.s
+new file mode 100644
+index 0000000000..1414e51164
+--- /dev/null
++++ b/llvm/test/MC/RISCV/zc16-valid.s
+@@ -0,0 +1,30 @@
++# RUN: llvm-mc -triple=riscv32 -mattr=+m,+zc16 -show-encoding %s | FileCheck %s
++# RUN: not llvm-mc -triple=riscv32 -mattr=+m %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=NOZC16
++
++# Zc16 reuses the C.FLD encoding slot (quadrant 0, funct3=001).
++# The assembler accepts the compressed mnemonic and emits a 2-byte instruction.
++# (This tree's llvm-mc prints the un-compressed mnemonic for -show-encoding,
++# so the checks below intentionally match only the encoding bytes.)
++
++c.mulh a0, a1
++# CHECK: encoding: [0x59,0x2a]
++
++c.mulhsu a0, a1
++# CHECK: encoding: [0x5a,0x2a]
++
++c.mulhu a0, a1
++# CHECK: encoding: [0x5b,0x2a]
++
++c.div a0, a1
++# CHECK: encoding: [0x5c,0x2a]
++
++c.divu a0, a1
++# CHECK: encoding: [0x5d,0x2a]
++
++c.rem a0, a1
++# CHECK: encoding: [0x5e,0x2a]
++
++c.remu a0, a1
++# CHECK: encoding: [0x5f,0x2a]
++
++# NOZC16: instruction requires the following: 'Zc16'

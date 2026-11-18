@@ -1,0 +1,157 @@
+--- a/riscv/encoding.h
++++ b/riscv/encoding.h
+@@ -829,6 +829,20 @@
+ #define MASK_C_MOP_N 0xf8ff
+ #define MATCH_C_MUL 0x9c41
+ #define MASK_C_MUL 0xfc63
++#define MATCH_C_MULH 0x2001
++#define MASK_C_MULH 0xe003
++#define MATCH_C_MULHSU 0x2002
++#define MASK_C_MULHSU 0xe003
++#define MATCH_C_MULHU 0x2003
++#define MASK_C_MULHU 0xe003
++#define MATCH_C_DIV 0x2004
++#define MASK_C_DIV 0xe003
++#define MATCH_C_DIVU 0x2005
++#define MASK_C_DIVU 0xe003
++#define MATCH_C_REM 0x2006
++#define MASK_C_REM 0xe003
++#define MATCH_C_REMU 0x2007
++#define MASK_C_REMU 0xe003
+ #define MATCH_C_MV 0x8002
+ #define MASK_C_MV 0xf003
+ #define MATCH_C_NOP 0x1
+@@ -4511,6 +4525,13 @@
+ DECLARE_INSN(c_mop_9, MATCH_C_MOP_9, MASK_C_MOP_9)
+ DECLARE_INSN(c_mop_N, MATCH_C_MOP_N, MASK_C_MOP_N)
+ DECLARE_INSN(c_mul, MATCH_C_MUL, MASK_C_MUL)
++DECLARE_INSN(c_mulh, MATCH_C_MULH, MASK_C_MULH)
++DECLARE_INSN(c_mulhsu, MATCH_C_MULHSU, MASK_C_MULHSU)
++DECLARE_INSN(c_mulhu, MATCH_C_MULHU, MASK_C_MULHU)
++DECLARE_INSN(c_div, MATCH_C_DIV, MASK_C_DIV)
++DECLARE_INSN(c_divu, MATCH_C_DIVU, MASK_C_DIVU)
++DECLARE_INSN(c_rem, MATCH_C_REM, MASK_C_REM)
++DECLARE_INSN(c_remu, MATCH_C_REMU, MASK_C_REMU)
+ DECLARE_INSN(c_mv, MATCH_C_MV, MASK_C_MV)
+ DECLARE_INSN(c_nop, MATCH_C_NOP, MASK_C_NOP)
+ DECLARE_INSN(c_not, MATCH_C_NOT, MASK_C_NOT)
+--- a/riscv/decode.h
++++ b/riscv/decode.h
+@@ -122,6 +122,10 @@
+   uint64_t rvc_rs1s() { return 8 + x(7, 3); }
+   uint64_t rvc_rs2s() { return 8 + x(2, 3); }
+ 
++  // Zc16: 5-bit register fields for the reclaimed C.FLD slot.
++  uint64_t cm_rd() { return x(12, 5); }
++  uint64_t cm_rs2() { return x(7, 5); }
++
+   uint64_t rvc_lbimm() { return (x(5, 1) << 1) + x(6, 1); }
+   uint64_t rvc_lhimm() { return (x(5, 1) << 1); }
+ 
+--- a/riscv/isa_parser.h
++++ b/riscv/isa_parser.h
+@@ -21,6 +21,7 @@
+   EXT_ZBKX,
+   EXT_ZCA,
+   EXT_ZCB,
++  EXT_ZC16,
+   EXT_ZCD,
+   EXT_ZCE,
+   EXT_ZCF,
+--- a/riscv/riscv.mk.in
++++ b/riscv/riscv.mk.in
+@@ -192,6 +192,13 @@
+ 	c_ldsp \
+ 	c_lw \
+ 	c_lwsp \
++	c_mulh \
++	c_mulhsu \
++	c_mulhu \
++	c_div \
++	c_divu \
++	c_rem \
++	c_remu \
+ 	c_mv \
+ 	c_or \
+ 	c_slli \
+--- /dev/null
++++ b/riscv/insns/c_mulh.h
+@@ -0,0 +1,8 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++reg_t rd = insn.cm_rd();
++reg_t rs2 = insn.cm_rs2();
++if (xlen == 64)
++  WRITE_REG(rd, mulh(READ_REG(rd), READ_REG(rs2)));
++else
++  WRITE_REG(rd, sext32((sext32(READ_REG(rd)) * sext32(READ_REG(rs2))) >> 32));
+--- /dev/null
++++ b/riscv/insns/c_mulhsu.h
+@@ -0,0 +1,8 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++reg_t rd = insn.cm_rd();
++reg_t rs2 = insn.cm_rs2();
++if (xlen == 64)
++  WRITE_REG(rd, mulhsu(READ_REG(rd), READ_REG(rs2)));
++else
++  WRITE_REG(rd, sext32((sext32(READ_REG(rd)) * reg_t((uint32_t)READ_REG(rs2))) >> 32));
+--- /dev/null
++++ b/riscv/insns/c_mulhu.h
+@@ -0,0 +1,8 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++reg_t rd = insn.cm_rd();
++reg_t rs2 = insn.cm_rs2();
++if (xlen == 64)
++  WRITE_REG(rd, mulhu(READ_REG(rd), READ_REG(rs2)));
++else
++  WRITE_REG(rd, sext32(((uint64_t)(uint32_t)READ_REG(rd) * (uint64_t)(uint32_t)READ_REG(rs2)) >> 32));
+--- /dev/null
++++ b/riscv/insns/c_div.h
+@@ -0,0 +1,10 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++sreg_t lhs = sext_xlen(READ_REG(insn.cm_rd()));
++sreg_t rhs = sext_xlen(READ_REG(insn.cm_rs2()));
++if (rhs == 0)
++  WRITE_REG(insn.cm_rd(), UINT64_MAX);
++else if (lhs == INT64_MIN && rhs == -1)
++  WRITE_REG(insn.cm_rd(), lhs);
++else
++  WRITE_REG(insn.cm_rd(), sext_xlen(lhs / rhs));
+--- /dev/null
++++ b/riscv/insns/c_divu.h
+@@ -0,0 +1,8 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++reg_t lhs = zext_xlen(READ_REG(insn.cm_rd()));
++reg_t rhs = zext_xlen(READ_REG(insn.cm_rs2()));
++if (rhs == 0)
++  WRITE_REG(insn.cm_rd(), UINT64_MAX);
++else
++  WRITE_REG(insn.cm_rd(), sext_xlen(lhs / rhs));
+--- /dev/null
++++ b/riscv/insns/c_rem.h
+@@ -0,0 +1,10 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++sreg_t lhs = sext_xlen(READ_REG(insn.cm_rd()));
++sreg_t rhs = sext_xlen(READ_REG(insn.cm_rs2()));
++if (rhs == 0)
++  WRITE_REG(insn.cm_rd(), lhs);
++else if (lhs == INT64_MIN && rhs == -1)
++  WRITE_REG(insn.cm_rd(), 0);
++else
++  WRITE_REG(insn.cm_rd(), sext_xlen(lhs % rhs));
+--- /dev/null
++++ b/riscv/insns/c_remu.h
+@@ -0,0 +1,8 @@
++require_extension(EXT_ZC16);
++require_either_extension('M', EXT_ZMMUL);
++reg_t lhs = zext_xlen(READ_REG(insn.cm_rd()));
++reg_t rhs = zext_xlen(READ_REG(insn.cm_rs2()));
++if (rhs == 0)
++  WRITE_REG(insn.cm_rd(), sext_xlen(READ_REG(insn.cm_rd())));
++else
++  WRITE_REG(insn.cm_rd(), sext_xlen(lhs % rhs));

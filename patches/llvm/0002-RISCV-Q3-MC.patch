@@ -1,0 +1,383 @@
+diff --git a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
+index c62a714c24..c0146f9aa4 100644
+--- a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
++++ b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
+@@ -463,6 +463,16 @@ static DecodeStatus decodeXqccmpRlistS0(MCInst &Inst, uint32_t Imm,
+   return decodeZcmpRlist(Inst, Imm, Address, Decoder);
+ }
+ 
++static DecodeStatus DecodeBaseGPRRegisterClass(MCInst &Inst, unsigned RegNo,
++                                               uint64_t Address,
++                                               const MCDisassembler *Decoder) {
++  static const unsigned Regs[] = {RISCV::X2, RISCV::X3, RISCV::X8, RISCV::X9};
++  if (RegNo >= 4)
++    return MCDisassembler::Fail;
++  Inst.addOperand(MCOperand::createReg(Regs[RegNo]));
++  return MCDisassembler::Success;
++}
++
+ #include "RISCVGenDisassemblerTables.inc"
+ 
+ namespace {
+@@ -675,6 +685,80 @@ DecodeStatus RISCVDisassembler::getInstruction48(MCInst &MI, uint64_t &Size,
+   return MCDisassembler::Fail;
+ }
+ 
++static DecodeStatus decodeQ3(MCInst &MI, uint16_t Insn, uint64_t Address,
++                             const MCDisassembler *Decoder) {
++  unsigned f4 = (Insn >> 12) & 0xF;
++  auto R = [](unsigned N) { return MCOperand::createReg(N); };
++  auto I = [](unsigned N) { return MCOperand::createImm(N); };
++
++  switch (f4) {
++  case 0:
++    MI.setOpcode(RISCV::Q3_SLL);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 31)));
++    return MCDisassembler::Success;
++  case 1:
++    MI.setOpcode(RISCV::Q3_SRL);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 31)));
++    return MCDisassembler::Success;
++  case 2:
++    MI.setOpcode(RISCV::Q3_SRA);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 31)));
++    return MCDisassembler::Success;
++  case 3:
++    MI.setOpcode(RISCV::Q3_SLT);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 31)));
++    return MCDisassembler::Success;
++  case 4:
++    MI.setOpcode(RISCV::Q3_SLTU);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 7) & 31)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 2) & 31)));
++    return MCDisassembler::Success;
++  case 6:
++    if (((Insn >> 10) & 3) != 3)
++      return MCDisassembler::Fail;
++    MI.setOpcode(RISCV::Q3_XORI);
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 6) & 0xF)));
++    MI.addOperand(R(RISCV::X0 + ((Insn >> 6) & 0xF)));
++    MI.addOperand(I((Insn >> 2) & 0xF));
++    return MCDisassembler::Success;
++  case 7:
++    if (((Insn >> 10) & 3) != 2)
++      return MCDisassembler::Fail;
++    {
++      static const unsigned Bases[4] = {RISCV::X8, RISCV::X9, RISCV::X2,
++                                        RISCV::X3};
++      MI.setOpcode(RISCV::Q3_LW);
++      MI.addOperand(R(RISCV::X8 + ((Insn >> 7) & 7)));
++      MI.addOperand(R(Bases[(Insn >> 5) & 3]));
++      MI.addOperand(I((Insn >> 2) & 7));
++    }
++    return MCDisassembler::Success;
++  case 8:
++    if (((Insn >> 10) & 3) != 3)
++      return MCDisassembler::Fail;
++    {
++      static const unsigned Bases[4] = {RISCV::X8, RISCV::X9, RISCV::X2,
++                                        RISCV::X3};
++      MI.setOpcode(RISCV::Q3_SW);
++      MI.addOperand(R(RISCV::X8 + ((Insn >> 7) & 7)));
++      MI.addOperand(R(Bases[(Insn >> 5) & 3]));
++      MI.addOperand(I((Insn >> 2) & 7));
++    }
++    return MCDisassembler::Success;
++  default:
++    return MCDisassembler::Fail;
++  }
++}
++
+ DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
+                                                ArrayRef<uint8_t> Bytes,
+                                                uint64_t Address,
+@@ -684,6 +768,17 @@ DecodeStatus RISCVDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
+   if ((Bytes[0] & 0b11) == 0b00 || (Bytes[0] & 0b11) == 0b01)
+     return getInstruction16(MI, Size, Bytes, Address, CS);
+ 
++  // RVA-E16 Q3: bits[1:0] = 11 but the instruction is 16 bits.
++  if ((Bytes[0] & 0b11) == 0b11 &&
++      STI.hasFeature(RISCV::FeatureStdExtZc16q3) && Bytes.size() >= 2) {
++    uint16_t Insn16 = Bytes[0] | (Bytes[1] << 8);
++    DecodeStatus Q3 = decodeQ3(MI, Insn16, Address, this);
++    if (Q3 != MCDisassembler::Fail) {
++      Size = 2;
++      return Q3;
++    }
++  }
++
+   // Try to decode as a 32-bit instruction first.
+   DecodeStatus Result = getInstruction32(MI, Size, Bytes, Address, CS);
+   if (Result != MCDisassembler::Fail)
+diff --git a/llvm/lib/Target/RISCV/RISCVFeatures.td b/llvm/lib/Target/RISCV/RISCVFeatures.td
+index 9e7ba85b68..ad28df1896 100644
+--- a/llvm/lib/Target/RISCV/RISCVFeatures.td
++++ b/llvm/lib/Target/RISCV/RISCVFeatures.td
+@@ -482,6 +482,12 @@ def HasStdExtZc16 : Predicate<"Subtarget->hasStdExtZc16()">,
+                     AssemblerPredicate<(all_of FeatureStdExtZc16),
+                         "'Zc16' (16-bit integer multiply/divide forms)">;
+ 
++def FeatureStdExtZc16q3
++    : RISCVExtension<1, 0, "Q3 16-bit test extension">;
++def HasStdExtZc16q3 : Predicate<"Subtarget->hasStdExtZc16q3()">,
++                      AssemblerPredicate<(all_of FeatureStdExtZc16q3),
++                          "'Zc16q3' (Q3 16-bit test extension)">;
++
+ // Bitmanip Extensions
+ 
+ def FeatureStdExtZba
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfo.td b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+index 9c977dac23..9dcb253186 100644
+--- a/llvm/lib/Target/RISCV/RISCVInstrInfo.td
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfo.td
+@@ -2395,6 +2395,7 @@ include "RISCVInstrInfoP.td"
+ include "RISCVInstrInfoC.td"
+ include "RISCVInstrInfoZc.td"
+ include "RISCVInstrInfoZc16.td"
++include "RISCVInstrInfoQ3.td"
+ include "RISCVInstrInfoZcmop.td"
+ include "RISCVInstrInfoZclsd.td"
+ 
+diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
+new file mode 100755
+index 0000000000..8b007cfb85
+--- /dev/null
++++ b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
+@@ -0,0 +1,205 @@
++//===-- RISCVInstrInfoQ3.td - RVA-E16 Q3 instructions --------*- tablegen -*-===//
++//
++// Q3: bits[1:0] = 11, 16-bit instructions (RVA-E16).
++//
++//===----------------------------------------------------------------------===//
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CR<bits<4> f4, string op>
++    : RVInst16<(outs GPR:$rd_wb), (ins GPR:$rd, GPR:$rs2),
++               op, "$rd, $rs2", [], InstFormatOther> {
++  bits<5> rd;
++  bits<5> rs2;
++  let Constraints = "$rd = $rd_wb";
++  let Inst{15-12} = f4;
++  let Inst{11-7} = rd;
++  let Inst{6-2} = rs2;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CA<bits<3> funct3, string op>
++    : RVInst16<(outs GPRC:$rd_wb), (ins GPRC:$rd, GPRC:$rs2),
++               op, "$rd, $rs2", [], InstFormatOther> {
++  bits<3> rd;
++  bits<3> rs2;
++  let Constraints = "$rd = $rd_wb";
++  let Inst{15-12} = 0b0101;
++  let Inst{11-9} = funct3;
++  let Inst{8-6} = rd;
++  let Inst{5-3} = rs2;
++  let Inst{2} = 0;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def Q3_SLL : Q3_CR<0b0000, "c.sll">;
++def Q3_SLT : Q3_CR<0b0011, "c.slt">;
++def Q3_SRL : Q3_CR<0b0001, "c.srl">;
++def Q3_SRA : Q3_CR<0b0010, "c.sra">;
++def Q3_SLTU : Q3_CR<0b0100, "c.sltu">;
++}
++
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_CI<bits<2> funct2, string op>
++    : RVInst16<(outs GPR4:$rd_wb), (ins GPR4:$rd, uimm4:$imm),
++               op, "$rd, $imm", [], InstFormatOther> {
++  bits<4> rd;
++  bits<4> imm;
++  let Constraints = "$rd = $rd_wb";
++  let Inst{15-12} = 0b0110;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = rd;
++  let Inst{5-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def Q3_XORI : Q3_CI<0b11, "c.xori">;
++}
++
++let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
++class Q3_LW_Inst<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs GPRC:$rd), (ins BaseGPR:$base, uimm3:$imm),
++               op, "$rd, ${imm}(${base})", [], InstFormatOther> {
++  bits<3> rd;
++  bits<2> base;
++  bits<3> imm;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-7} = rd;
++  let Inst{6-5} = base;
++  let Inst{4-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 1 in
++class Q3_SW_Inst<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs), (ins GPRC:$rs2, BaseGPR:$base, uimm3:$imm),
++               op, "$rs2, ${imm}(${base})", [], InstFormatOther> {
++  bits<3> rs2;
++  bits<2> base;
++  bits<3> imm;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-7} = rs2;
++  let Inst{6-5} = base;
++  let Inst{4-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def Q3_LW : Q3_LW_Inst<0b0111, 0b10, "c.lw">;
++def Q3_SW : Q3_SW_Inst<0b1000, 0b11, "c.sw">;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_FP<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs FPR32:$fd_wb), (ins FPR32:$fd, FPR32:$fs2),
++               op, "$fd, $fs2", [], InstFormatOther> {
++  bits<5> fd;
++  bits<5> fs2;
++  let Constraints = "$fd = $fd_wb";
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fd{3-0};
++  let Inst{5-2} = fs2{3-0};
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_FPCMP<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs), (ins FPR32:$fs1, FPR32:$fs2),
++               op, "$fs1, $fs2", [], InstFormatOther> {
++  bits<5> fs1;
++  bits<5> fs2;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fs1{3-0};
++  let Inst{5-2} = fs2{3-0};
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def C_FADD_S  : Q3_FP<9,  0, "c.fadd.s">;
++def C_FSUB_S  : Q3_FP<9,  1, "c.fsub.s">;
++def C_FMUL_S  : Q3_FP<9,  2, "c.fmul.s">;
++def C_FDIV_S  : Q3_FP<9,  3, "c.fdiv.s">;
++def C_FSQRT_S : Q3_FP<10, 0, "c.fsqrt.s">;
++def C_FMIN_S  : Q3_FP<10, 1, "c.fmin.s">;
++def C_FMAX_S  : Q3_FP<10, 2, "c.fmax.s">;
++def C_FSGNJ_S : Q3_FP<10, 3, "c.fsgnj.s">;
++def C_FSGNJN_S: Q3_FP<11, 0, "c.fsgnjn.s">;
++def C_FSGNJX_S: Q3_FP<11, 1, "c.fsgnjx.s">;
++def C_FEQ_S   : Q3_FPCMP<11, 2, "c.feq.s">;
++def C_FLT_S   : Q3_FPCMP<11, 3, "c.flt.s">;
++def C_FLE_S   : Q3_FPCMP<12, 0, "c.fle.s">;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_FP_CVT<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs FPR32:$fd_wb), (ins FPR32:$fd, GPR4:$rs1),
++               op, "$fd, $rs1", [], InstFormatOther> {
++  bits<5> fd;
++  bits<4> rs1;
++  let Constraints = "$fd = $fd_wb";
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fd{3-0};
++  let Inst{5-2} = rs1;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 0 in
++class Q3_FP_TOINT<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs GPR4:$rd), (ins FPR32:$fs1),
++               op, "$rd, $fs1", [], InstFormatOther> {
++  bits<4> rd;
++  bits<5> fs1;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fs1{3-0};
++  let Inst{5-2} = rd;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
++class Q3_FLW<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs FPR32:$fd), (ins BaseGPR:$base, uimm2:$imm),
++               op, "$fd, ${imm}(${base})", [], InstFormatOther> {
++  bits<5> fd;
++  bits<2> base;
++  bits<2> imm;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fd{3-0};
++  let Inst{5-4} = base;
++  let Inst{3-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let hasSideEffects = 0, mayLoad = 0, mayStore = 1 in
++class Q3_FSW<bits<4> f4, bits<2> funct2, string op>
++    : RVInst16<(outs), (ins FPR32:$fs2, BaseGPR:$base, uimm2:$imm),
++               op, "$fs2, ${imm}(${base})", [], InstFormatOther> {
++  bits<5> fs2;
++  bits<2> base;
++  bits<2> imm;
++  let Inst{15-12} = f4;
++  let Inst{11-10} = funct2;
++  let Inst{9-6} = fs2{3-0};
++  let Inst{5-4} = base;
++  let Inst{3-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def C_FCVT_S_W : Q3_FP_CVT<12, 1, "c.fcvt.s.w">;
++def C_FCVT_W_S : Q3_FP_TOINT<12, 2, "c.fcvt.w.s">;
++def C_FCLASS_S : Q3_FP_TOINT<12, 3, "c.fclass.s">;
++def C_FMV_X_W  : Q3_FP_TOINT<13, 0, "c.fmv.x.w">;
++def C_FMV_W_X  : Q3_FP_CVT<13, 1, "c.fmv.w.x">;
++def C_FLW_Q3   : Q3_FLW<13, 2, "c.flw">;
++def C_FSW_Q3   : Q3_FSW<13, 3, "c.fsw">;
++}
+diff --git a/llvm/lib/Target/RISCV/RISCVRegisterInfo.td b/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
+index 58af1f863f..7ab52d9267 100644
+--- a/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
++++ b/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
+@@ -374,6 +374,18 @@ def GPRC : GPRRegisterClass<(add (sequence "X%u", 10, 15),
+   let DecoderMethod = "DecodeSimpleRegisterClass<RISCV::X8, 8>";
+ }
+ 
++def Q3FPR : RISCVRegisterClass<[f32], 32, (sequence "F%u_F", 0, 15)> {
++  let DecoderMethod = "DecodeSimpleRegisterClass<RISCV::F0_F, 0>";
++}
++
++def BaseGPR : GPRRegisterClass<(add X2, X3, X8, X9)> {
++  let DecoderMethod = "DecodeBaseGPRRegisterClass";
++}
++
++def GPR4 : GPRRegisterClass<(sequence "X%u", 0, 15)> {
++  let DecoderMethod = "DecodeSimpleRegisterClass<RISCV::X0, 0>";
++}
++
+ // For indirect tail calls, we can't use callee-saved registers, as they are
+ // restored to the saved value before the tail call, which would clobber a call
+ // address. We shouldn't use x5 since that is a hint for to pop the return
