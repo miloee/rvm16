@@ -472,6 +472,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_12_exceptions_and_traps">12. Exceptions and Traps</a></li>
 <li><a href="#_13_code_size_evaluation_non_normative">13. Code Size Evaluation (Non-Normative)</a></li>
 <li><a href="#_14_implementation_status">14. Implementation Status</a></li>
+<li><a href="#_15_pseudoinstructions_and_assembler_syntax">15. Pseudoinstructions and Assembler Syntax</a></li>
+<li><a href="#_16_profiles">16. Profiles</a></li>
+<li><a href="#_17_benchmark_methodology_and_status">17. Benchmark Methodology and Status</a></li>
+<li><a href="#_18_compiler_and_abi_gap">18. Compiler and ABI Gap</a></li>
 <li><a href="#_appendix_a_revision_history">Appendix A. Revision History</a></li>
 </ul>
 </div>
@@ -542,7 +546,14 @@ byte for byte.  The baseline is:</p>
 c.sext.b/h, c.not;</p>
 </li>
 <li>
-<p>Zcmp/Zcmt are optional and use their standard encodings;</p>
+<p>Zcmp is mandatory: cm.push/pop/popret/popretz, used as a save-all
+prologue/epilogue;</p>
+</li>
+<li>
+<p>Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;</p>
+</li>
+<li>
+<p>Zcmt is optional: cm.jt/cm.jalt for switch tables;</p>
 </li>
 <li>
 <p>RVC forms that name x16-x31 are illegal because RVM16-C has only x0-x15.</p>
@@ -645,6 +656,13 @@ quadrant 11 only.</p>
 <div class="paragraph">
 <p>The first two pointer arguments naturally land in x8/x9, which are Q3 base
 registers, so loads do not need a preceding c.mv.</p>
+</div>
+<div class="paragraph">
+<p>Zcmp push/pop addresses architectural x8-x15 plus ra.  C can use
+cm.push {ra, s0-s1, a0-a5}, -16 as a save-all prologue even though its ABI
+names differ: every live data register is in x8-x15, so over-saving is
+correct but may cost stack traffic, not code size.  Zcf compressed loads use
+f8-f15; allocate FP temporaries there when possible.</p>
 </div>
 </div>
 </div>
@@ -1043,14 +1061,14 @@ instructions are 16 bits, mepc always points at a 2-byte boundary.</p>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Dhrystone</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">2508</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">1948 (2068 with stubs)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">-17% to -22%</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1906 (2026 with stubs)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-19% to -24%</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">CoreMark core</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">6398</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">6532</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">+2.1%</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6316</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">-1.3%</p></td>
 </tr>
 </tbody>
 </table>
@@ -1074,6 +1092,12 @@ method and caveats.</p>
 <p>Spike-C: ALU, branches, GP/PC, LD/ST implemented; FIR/sum run.</p>
 </li>
 <li>
+<p>Zcmp: cm.push {ra,s0-s7}, -48 / cm.pop tested (x10=7).</p>
+</li>
+<li>
+<p>Zcf: c.flw/c.fsw/c.flwsp/c.fswsp encodings verified with +zcf.</p>
+</li>
+<li>
 <p>LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
 assemble and run.</p>
 </li>
@@ -1084,6 +1108,239 @@ assemble and run.</p>
 <p>RVM16-A (32 GPR) remains the negative control.</p>
 </li>
 </ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_15_pseudoinstructions_and_assembler_syntax">15. Pseudoinstructions and Assembler Syntax</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Pseudo</th>
+<th class="tableblock halign-left valign-top">Expansion</th>
+<th class="tableblock halign-left valign-top">Bytes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">mv rd, rs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.mv</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">li rd, imm6</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.li</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">li rd, imm32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">5-bit chunk build</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">16-26</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">lw rd, off(gp)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.lwgp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sw rd, off(gp)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.swgp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">lw rd, off(pc)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.lwpc</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">call L</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.jal L</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ret</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.jr ra</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">beq rs1, rs2, L</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">xor + c.beqz</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">4</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bge rs1, rs2, L</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">c.blt rs2, rs1, L</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bgeu/bltu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sltu + c.beqz/c.bnez</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>The C-specific assembler mnemonics used by the prototype are distinct from
+RVC to avoid ambiguity: c.addc/c.subc/c.andc/c.orc/c.xorc/c.sllc/c.srlc/
+c.srac/c.sltc/c.sltuc, c.bnec/c.bltc/c.blezc, c.lwgc/c.swgc/c.lwpc, and
+c.lwc/c.swc.  LD/ST syntax is c.lwc rd, off, base.  Zcmp syntax is
+cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_16_profiles">16. Profiles</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Profile</th>
+<th class="tableblock halign-left valign-top">Mandatory</th>
+<th class="tableblock halign-left valign-top">Optional</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-M</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I, M, C v2.0, Zcb, Zcmp, Zicsr</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt, Zcf (no F)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-F</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I, M, F, C v2.0, Zcb, Zcmp, Zcf</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>F32 uses 16 FP registers f0-f15.  Zcf compressed loads/stores use f8-f15;
+allocate FP temporaries there when possible.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_17_benchmark_methodology_and_status">17. Benchmark Methodology and Status</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Sources used:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Dhrystone v2.0 (dhry_pack_1.c, dhry_pack_2.c);</p>
+</li>
+<li>
+<p>CoreMark (core_main.c, core_list_join.c, core_matrix.c, core_state.c,
+core_util.c);</p>
+</li>
+<li>
+<p>Linpack C (linpackc.new, not built yet).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Status:</p>
+</div>
+<table class="tableblock frame-all grid-all fit-content">
+<colgroup>
+<col>
+<col>
+<col>
+<col>
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Benchmark</th>
+<th class="tableblock halign-left valign-top">RV32EC+Zc*</th>
+<th class="tableblock halign-left valign-top">RVM16-C</th>
+<th class="tableblock halign-left valign-top">Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FIR</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">30 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">26 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">llvm-mc + Spike-C</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">sum</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">24 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">20 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">llvm-mc + Spike-C</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Dhrystone</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2508 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1906 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">static model, no C binary</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CoreMark core</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6398 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6316 B</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">static model, no C binary</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Linpack</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">not built</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">not built</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">source only</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>There is no full RVM16-C compiler yet.  Dhrystone/CoreMark/Linpack are not
+executed as RVM16-C binaries; their sizes come from mapping RV32EC assembly
+to C encodings (tools/model_c.py).  FIR/sum and the Zcmp test are real
+Spike-C runs.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_18_compiler_and_abi_gap">18. Compiler and ABI Gap</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The current LLVM work is MC-layer only: it assembles and encodes the C
+instructions, including branch label fixups.  It is not a code generator.</p>
+</div>
+<div class="paragraph">
+<p>A full compiler needs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>RVM16C TargetMachine, register info (16 GPR), calling convention and
+frame lowering;</p>
+</li>
+<li>
+<p>instruction selection/lowering for all Q3 blocks and libcalls;</p>
+</li>
+<li>
+<p>ELF object support, relocations and linker relaxation;</p>
+</li>
+<li>
+<p>Clang driver target/ABI, startup code, libc/HTIF port;</p>
+</li>
+<li>
+<p>benchmark ports for Dhrystone/CoreMark/Linpack.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Until those exist, benchmark comparisons involving RVM16-C are model-based,
+not compiled binaries.</p>
 </div>
 </div>
 </div>
@@ -1114,7 +1371,7 @@ assemble and run.</p>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2026-11-18 19:18:21 +0800
+Last updated 2026-11-18 20:26:21 +0800
 </div>
 </div>
 </body>

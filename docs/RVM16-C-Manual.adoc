@@ -258,6 +258,85 @@ method and caveats.
 * No full LLVM backend or Clang ABI; no CoreMark binary yet.
 * RVM16-A (32 GPR) remains the negative control.
 
+== 15. Pseudoinstructions and Assembler Syntax
+
+[%autowidth,options="header"]
+|===
+| Pseudo | Expansion | Bytes
+| mv rd, rs | c.mv | 2
+| li rd, imm6 | c.li | 2
+| li rd, imm32 | 5-bit chunk build | 16-26
+| lw rd, off(gp) | c.lwgp | 2
+| sw rd, off(gp) | c.swgp | 2
+| lw rd, off(pc) | c.lwpc | 2
+| call L | c.jal L | 2
+| ret | c.jr ra | 2
+| beq rs1, rs2, L | xor + c.beqz | 4
+| bge rs1, rs2, L | c.blt rs2, rs1, L | 2
+| bgeu/bltu | sltu + c.beqz/c.bnez | 6
+|===
+
+The C-specific assembler mnemonics used by the prototype are distinct from
+RVC to avoid ambiguity: c.addc/c.subc/c.andc/c.orc/c.xorc/c.sllc/c.srlc/
+c.srac/c.sltc/c.sltuc, c.bnec/c.bltc/c.blezc, c.lwgc/c.swgc/c.lwpc, and
+c.lwc/c.swc.  LD/ST syntax is c.lwc rd, off, base.  Zcmp syntax is
+cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.
+
+== 16. Profiles
+
+[%autowidth,options="header"]
+|===
+| Profile | Mandatory | Optional
+| RVM16-C-M | I, M, C v2.0, Zcb, Zcmp, Zicsr | Zcmt, Zcf (no F)
+| RVM16-C-F | I, M, F, C v2.0, Zcb, Zcmp, Zcf | Zcmt
+|===
+
+F32 uses 16 FP registers f0-f15.  Zcf compressed loads/stores use f8-f15;
+allocate FP temporaries there when possible.
+
+== 17. Benchmark Methodology and Status
+
+Sources used:
+
+* Dhrystone v2.0 (dhry_pack_1.c, dhry_pack_2.c);
+* CoreMark (core_main.c, core_list_join.c, core_matrix.c, core_state.c,
+  core_util.c);
+* Linpack C (linpackc.new, not built yet).
+
+Status:
+
+[%autowidth,options="header"]
+|===
+| Benchmark | RV32EC+Zc* | RVM16-C | Evidence
+| FIR | 30 B | 26 B | llvm-mc + Spike-C
+| sum | 24 B | 20 B | llvm-mc + Spike-C
+| Dhrystone | 2508 B | 1906 B | static model, no C binary
+| CoreMark core | 6398 B | 6316 B | static model, no C binary
+| Linpack | not built | not built | source only
+|===
+
+There is no full RVM16-C compiler yet.  Dhrystone/CoreMark/Linpack are not
+executed as RVM16-C binaries; their sizes come from mapping RV32EC assembly
+to C encodings (tools/model_c.py).  FIR/sum and the Zcmp test are real
+Spike-C runs.
+
+== 18. Compiler and ABI Gap
+
+The current LLVM work is MC-layer only: it assembles and encodes the C
+instructions, including branch label fixups.  It is not a code generator.
+
+A full compiler needs:
+
+* RVM16C TargetMachine, register info (16 GPR), calling convention and
+  frame lowering;
+* instruction selection/lowering for all Q3 blocks and libcalls;
+* ELF object support, relocations and linker relaxation;
+* Clang driver target/ABI, startup code, libc/HTIF port;
+* benchmark ports for Dhrystone/CoreMark/Linpack.
+
+Until those exist, benchmark comparisons involving RVM16-C are model-based,
+not compiled binaries.
+
 == Appendix A. Revision History
 
 [%autowidth,options="header"]
