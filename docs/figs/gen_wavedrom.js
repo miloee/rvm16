@@ -62,7 +62,7 @@ reg('enc-m.svg', [
 reg('enc-fp.svg', [
   {bits: 4, name: 'f4'},
   {bits: 2, name: 'funct2'},
-  {bits: 4, name: 'fd'},
+  {bits: 4, name: 'fd/fs1'},
   {bits: 4, name: 'fs2'},
   {bits: 2, name: '11'}
 ]);

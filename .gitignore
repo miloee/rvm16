@@ -4,3 +4,5 @@ build/
 *.log
 __pycache__/
 .DS_Store
+
+bench/linpack/linpackf.c

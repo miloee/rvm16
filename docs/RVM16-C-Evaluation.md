@@ -59,7 +59,7 @@ Dhrystone pack1 有 28 处 .L_MergedGlobals 和约 40 处 .L.str；GP 让前者�
 - Dhrystone 栈访问 37/598 = 6.2%；CoreMark 栈访问 273/2328 = 11.7%。
 - 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（按模型的距离/寄存器判断），每条 +2 B；CoreMark 的 matrix/list 分支较多，需要更精确的距离分析。
 - 结论：GP/PC 让 Dhrystone 这类全局/字符串密集代码明显变小；CoreMark 这类栈/结构体密集代码大约持平，不能说普遍更小。
-- Linpack：标准 linpackc.new 是 double 精度，RVM16-C 只有 F32，不能直接跑；需要 single-precision 端口，目前未构建。
+- Linpack：标准 linpackc.new 是 double 精度，RVM16-C 只有 F32；已做 single-precision 端口并作为 RV32EC+Zc* baseline 跑通（n=50），RVM16-C 本身仍无 C 二进制。
 
 模型不是编译器：actual 列已用 assemble 后的 .text 校准到 Dhrystone 2508；CoreMark actual 列直接取 clang 对象 .text，模型对 CoreMark 的指令尺寸仍有约 11% 高估，所以 CoreMark 的数字只作趋势参考。
 
@@ -105,12 +105,15 @@ ALU block、分支 block、GP/PC block、额外 LD/ST block 的分配，按指�
 ### 2.5 Baseline benchmark runs
 
 - Dhrystone：代码按 rv32emc_zcb_zcmp_zcmt 编译，在标准 Spike 上以
-  RV32IMC_Zcb_Zcmp_Zcmt 运行，RC=0；ELF .text 2206 B（含 crt0/stubs）。
-- CoreMark：同样编译/运行，RC=0；ELF .text 6338 B。ITERATIONS=10，但
-  time_in_secs 被 stub 成 10，只跑最小迭代；时序没有意义。
-- 这两个是 **RV32EC+Zc* baseline 运行**，不是 RVM16-C 二进制；RVM16-C
+  RV32IMC_Zcb_Zcmp_Zcmt 运行，RC=0；自检值全部正确；ELF .text 3278 B
+  （含 crt0/HTIF printf/stubs）。
+- CoreMark：同样编译/运行，RC=0；CRC final 0x4983，输出
+  "Correct operation validated"；ELF .text 7182 B。clock 是确定性 stub，
+  时序没有意义。
+- Linpack：single-precision 端口，n=50，RC=0，KFLOPS 5.00；clock 是
+  确定性 stub，只证明端口和输出路径，不是真实性能。
+- 这三个都是 **RV32EC+Zc* baseline 运行**，不是 RVM16-C 二进制；RVM16-C
   仍是第 2.3 节的静态模型。
-- Linpack 是 double 精度，RVM16-C F32-only，未运行。
 
 ## 3. 待补指标
 

@@ -1,1 +1,4 @@
-#define SPIKE_VERSION "1.1.1-dev"
+RVM16-C Spike overlay 0.2
+Base: RVA-E16 spike tree (/home/milo/spike-q3)
+Status: ALU/M/F32/CSR/SYS/Zcb tests pass on Spike-C; benchmarks run as
+RV32EC+Zc* baseline only.

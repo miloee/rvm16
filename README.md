@@ -22,11 +22,11 @@ This is a working proposal and research prototype, not a ratified standard.
 | ISA manual | Draft 0.3, encodings for Q3 blocks |
 | Q3 allocation | 16 blocks, checked |
 | LLVM MC | integer slice + 20 F32 ops |
-| Spike | integer slice + 20 F32 ops |
+| Spike | ALU/M/F32/CSR/SYS/Zcb groups tested |
 | Q3 disassembly | f4 0-8 (ALU, xori, lw/sw) |
 | C path | leaf subset via tools/expand16.py |
 | Full Expand16 pass | not implemented |
-| CoreMark/Dhrystone | not run yet |
+| Benchmarks | Dhrystone/CoreMark/Linpack run as RV32EC+Zc* baseline |
 
 ## Quick start
 
@@ -84,7 +84,9 @@ redefined as a new ISA.
 - Spike-C: FIR 26 B, sum 20 B, x8=70/10;
 - LLVM MC: distinct mnemonics under +zc16q3, branch label fixups, same sizes;
 - Dhrystone model: 2508 -> 1906 B (-24%; ~2026 with stubs);
-- CoreMark core: 6398 -> 6316 B (-1.3%, with Zcmp).
+- CoreMark core: 6398 -> 6316 B (-1.3%, with Zcmp);
+- baseline benchmarks: Dhrystone self-check RC=0, CoreMark CRC 0x4983,
+  Linpack float KFLOPS 5.00; these are RV32EC+Zc* binaries, not RVM16-C.
 - [Vertical slice status](docs/Q3-Vertical-Slice-Status.md)
 - [Zhihu draft](docs/Zhihu-Article.md)
 

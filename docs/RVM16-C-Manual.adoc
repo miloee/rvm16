@@ -42,8 +42,10 @@ RVM16-C inherits the standard RVC instructions in quadrants 00, 01 and 10
 byte for byte.  The baseline is:
 
 * C v2.0;
-* Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h/w,
-  c.sext.b/h, c.not;
+* Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h,
+  c.not;
+* c.sext.b/h require Zbb; c.zext.w requires Zba on RV32.  These three are
+  optional and are illegal when the required extension is absent.
 * Zcmp is mandatory: cm.push/pop/popret/popretz, used as a save-all
   prologue/epilogue;
 * Zcf is mandatory: c.flw/c.fsw/c.flwsp/c.fswsp for F32;
@@ -211,9 +213,11 @@ image::figs/enc-m.svg[width=100%]
 
 == 10. F32
 
-    word = (f4 << 12) | (funct2 << 10) | (fd << 6) | (fs2 << 2) | 0b11
+    word = (f4 << 12) | (funct2 << 10) | (freg << 6) | (fs2 << 2) | 0b11
 
-fd/fs2 are 4-bit (f0-f15).  The 20 operations are the same as RVM16-A:
+freg/fs2 are 4-bit (f0-f15).  freg is fd for arithmetic/conversion/move and
+fs1 for fcmp.  For flw/fsw, the fs2 field is split into base (2 bits) and
+off2 (2 bits).  The 20 operations are the same as RVM16-A:
 
 [%autowidth,options="header"]
 |===
@@ -228,8 +232,9 @@ fd/fs2 are 4-bit (f0-f15).  The 20 operations are the same as RVM16-A:
 | 13 | 2-3 | flw/fsw
 |===
 
-There is no FMA.  frm is dynamic.  fcmp writes the 4-bit fd field; the
-compiler should choose x8-x15 if the result feeds a fused branch.
+There is no FMA.  frm is dynamic.  fcmp has no rd field: c.feq.s/c.flt.s/
+c.fle.s write x7 (the cold-CSR scratch register).  The compiler moves the
+result to x8-x15 if it feeds a fused branch.
 
 .F32 编码
 image::figs/enc-fp.svg[width=100%]
@@ -288,7 +293,8 @@ method and caveats.
   jvt=0x80000240 (64-byte aligned), cm.jt 0 jumped to the target, RC=0.
 * LLVM MC: distinct mnemonics under +zc16q3, branch label fixups; FIR/sum
   assemble and run.
-* No full LLVM backend or Clang ABI; no CoreMark binary yet.
+* No full LLVM backend or Clang ABI; RVM16-C C binaries are not built.
+  RV32EC+Zc* baseline CoreMark/Dhrystone/Linpack binaries do run.
 * RVM16-A (32 GPR) remains the negative control.
 
 == 15. Pseudoinstructions and Assembler Syntax
@@ -320,10 +326,10 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.
 [%autowidth,options="header"]
 |===
 | Profile | Mandatory | Optional
-| RVM16-C-M | I, M, C v2.0, Zcb, Zcmp, Zicsr | Zcmt, Zcf (no F)
-| RVM16-C-F | I, M, F, C v2.0, Zcb, Zcmp, Zcf | Zcmt
-| RVM16-C-E | I, M, C v2.0, Zcb, Zcmp, Zcmt | Zcf optional
-| RVM16-C-D (future) | I, M, D, C v2.0, Zcb, Zcmp, Zcd | Zcmt
+| RVM16-C-M | I, M, C v2.0, Zcb, Zcmp, Zicsr | Zcmt, Zcf, Zbb, Zba (no F)
+| RVM16-C-F | I, M, F, C v2.0, Zcb, Zcmp, Zcf | Zcmt, Zbb, Zba
+| RVM16-C-E | I, M, C v2.0, Zcb, Zcmp, Zcmt | Zcf, Zbb, Zba
+| RVM16-C-D (future) | I, M, D, C v2.0, Zcb, Zcmp, Zcd | Zcmt, Zbb, Zba
 |===
 
 F32 uses 16 FP registers f0-f15.  Zcf compressed loads/stores use f8-f15;
@@ -336,8 +342,9 @@ Sources used:
 * Dhrystone v2.0 (dhry_pack_1.c, dhry_pack_2.c);
 * CoreMark (core_main.c, core_list_join.c, core_matrix.c, core_state.c,
   core_util.c);
-* Linpack C (linpackc.new).  The default source is double precision; RVM16-C
-  has only F32, so a single-precision port is required.  Not built.
+* Linpack C (linpackc.new).  The default source is double precision; a
+  single-precision port was built and run as an RV32EC+Zc* baseline.
+  RVM16-C itself has no C binary.
 
 Status:
 
@@ -348,12 +355,13 @@ Status:
 | sum | 24 B | 20 B | llvm-mc + Spike-C
 | Dhrystone | 2508 B | 1906 B | static model, no C binary
 | CoreMark core | 6398 B | 6316 B | static model, no C binary
-| Linpack | not built | not built | source only
+| Linpack | KFLOPS 5.00 (n=50) | not built | baseline float port
 |===
 
 There is no full RVM16-C compiler yet.  Dhrystone/CoreMark/Linpack are not
-executed as RVM16-C binaries; their sizes come from mapping RV32EC assembly
-to C encodings (tools/model_c.py).  FIR/sum and the Zcmp test are real
+executed as RVM16-C binaries; their RVM16-C sizes come from mapping RV32EC
+assembly to C encodings (tools/model_c.py).  The RV32EC+Zc* baseline binaries
+do run, including the Linpack float port.  FIR/sum and the Zcmp test are real
 Spike-C runs.
 
 == 18. Compiler and ABI Gap

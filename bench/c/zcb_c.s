@@ -24,6 +24,16 @@ _start:
   c.mv a5, a1
   c.not a5
   c.sw a5, 28(s0)
+  c.mv a4, a1
+  c.zext.h a4
+  c.sw a4, 32(s0)
+  c.mv a4, a1
+  c.sext.h a4
+  c.sw a4, 40(s0)
+  c.lh a3, 2(s0)
+  c.mv a4, a3
+  c.sext.h a4
+  c.sw a4, 44(s0)
   c.li a5, 1
   c.li a4, 2
   c.slli a4, 8

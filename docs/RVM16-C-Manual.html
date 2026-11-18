@@ -543,8 +543,12 @@ byte for byte.  The baseline is:</p>
 <p>C v2.0;</p>
 </li>
 <li>
-<p>Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h/w,
-c.sext.b/h, c.not;</p>
+<p>Zcb is mandatory: c.mul, c.lbu, c.lh, c.lhu, c.sb, c.sh, c.zext.b/h,
+c.not;</p>
+</li>
+<li>
+<p>c.sext.b/h require Zbb; c.zext.w requires Zba on RV32.  These three are
+optional and are illegal when the required extension is absent.</p>
 </li>
 <li>
 <p>Zcmp is mandatory: cm.push/pop/popret/popretz, used as a save-all
@@ -964,11 +968,13 @@ words).  Byte and halfword accesses use Zcb.</p>
 <div class="sectionbody">
 <div class="literalblock">
 <div class="content">
-<pre>word = (f4 &lt;&lt; 12) | (funct2 &lt;&lt; 10) | (fd &lt;&lt; 6) | (fs2 &lt;&lt; 2) | 0b11</pre>
+<pre>word = (f4 &lt;&lt; 12) | (funct2 &lt;&lt; 10) | (freg &lt;&lt; 6) | (fs2 &lt;&lt; 2) | 0b11</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>fd/fs2 are 4-bit (f0-f15).  The 20 operations are the same as RVM16-A:</p>
+<p>freg/fs2 are 4-bit (f0-f15).  freg is fd for arithmetic/conversion/move and
+fs1 for fcmp.  For flw/fsw, the fs2 field is split into base (2 bits) and
+off2 (2 bits).  The 20 operations are the same as RVM16-A:</p>
 </div>
 <table class="tableblock frame-all grid-all fit-content">
 <colgroup>
@@ -1027,8 +1033,9 @@ words).  Byte and halfword accesses use Zcb.</p>
 </tbody>
 </table>
 <div class="paragraph">
-<p>There is no FMA.  frm is dynamic.  fcmp writes the 4-bit fd field; the
-compiler should choose x8-x15 if the result feeds a fused branch.</p>
+<p>There is no FMA.  frm is dynamic.  fcmp has no rd field: c.feq.s/c.flt.s/
+c.fle.s write x7 (the cold-CSR scratch register).  The compiler moves the
+result to x8-x15 if it feeds a fused branch.</p>
 </div>
 <div class="imageblock">
 <div class="content">
@@ -1167,7 +1174,8 @@ jvt=0x80000240 (64-byte aligned), cm.jt 0 jumped to the target, RC=0.</p>
 assemble and run.</p>
 </li>
 <li>
-<p>No full LLVM backend or Clang ABI; no CoreMark binary yet.</p>
+<p>No full LLVM backend or Clang ABI; RVM16-C C binaries are not built.
+RV32EC+Zc* baseline CoreMark/Dhrystone/Linpack binaries do run.</p>
 </li>
 <li>
 <p>RVM16-A (32 GPR) remains the negative control.</p>
@@ -1279,22 +1287,22 @@ cm.push {ra, s0-s7}, -48 and cm.pop {ra, s0-s7}, 48.</p>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-M</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, C v2.0, Zcb, Zcmp, Zicsr</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt, Zcf (no F)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt, Zcf, Zbb, Zba (no F)</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-F</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, F, C v2.0, Zcb, Zcmp, Zcf</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt, Zbb, Zba</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-E</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, C v2.0, Zcb, Zcmp, Zcmt</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Zcf optional</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcf, Zbb, Zba</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RVM16-C-D (future)</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">I, M, D, C v2.0, Zcb, Zcmp, Zcd</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Zcmt, Zbb, Zba</p></td>
 </tr>
 </tbody>
 </table>
@@ -1320,8 +1328,9 @@ allocate FP temporaries there when possible.</p>
 core_util.c);</p>
 </li>
 <li>
-<p>Linpack C (linpackc.new).  The default source is double precision; RVM16-C
-has only F32, so a single-precision port is required.  Not built.</p>
+<p>Linpack C (linpackc.new).  The default source is double precision; a
+single-precision port was built and run as an RV32EC+Zc* baseline.
+RVM16-C itself has no C binary.</p>
 </li>
 </ul>
 </div>
@@ -1370,16 +1379,17 @@ has only F32, so a single-precision port is required.  Not built.</p>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Linpack</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">KFLOPS 5.00 (n=50)</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">not built</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">not built</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">source only</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">baseline float port</p></td>
 </tr>
 </tbody>
 </table>
 <div class="paragraph">
 <p>There is no full RVM16-C compiler yet.  Dhrystone/CoreMark/Linpack are not
-executed as RVM16-C binaries; their sizes come from mapping RV32EC assembly
-to C encodings (tools/model_c.py).  FIR/sum and the Zcmp test are real
+executed as RVM16-C binaries; their RVM16-C sizes come from mapping RV32EC
+assembly to C encodings (tools/model_c.py).  The RV32EC+Zc* baseline binaries
+do run, including the Linpack float port.  FIR/sum and the Zcmp test are real
 Spike-C runs.</p>
 </div>
 </div>
@@ -1528,7 +1538,7 @@ profiles, but its encodings are left reserved for a D-capable profile.</p>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2026-11-18 21:14:38 +0800
+Last updated 2026-11-18 23:16:02 +0800
 </div>
 </div>
 </body>

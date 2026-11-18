@@ -1,73 +1,52 @@
-# RVM16-C Status and Release 0.1
+# RVM16-C Status
 
 Date: 2026-11-18
 
-## What is verified
+## Verified instruction groups (Spike-C)
 
-- Spike-C (D:/dsh_workspace/spike-c):
-  - FIR 26 B, x8=70, RC=0;
-  - sum 20 B, x8=10, RC=0;
-  - GP load 5/7, x8=12;
-  - PC literal x8=0x12345678;
-  - Zcmp cm.push {ra,s0-s7}, -48 / cm.pop, x10=7.
-- LLVM MC:
-  - C mnemonics under +zc16q3: c.addc/c.bnec/c.lwgc/c.lwpc/c.lwc/...;
-  - branch label fixups fixup_riscv_zvmc_branch4/7;
-  - FIR/sum assemble with .Lloop/.Lend, 26/20 B, run on Spike-C 70/10;
-  - patch: patches/llvm/0003-RISCV-Zvmc-MC.patch.
-- Evaluation:
-  - Dhrystone model 2508 -> 1906 B (-24%; ~2026 with stubs);
-  - CoreMark core model 6398 -> 6316 B (-1.3%);
-  - stack 6.2% / 11.7%; trampoline model 7/12, 46/80;
-  - block-count bound: C allocation (ALU3/branch3/GP1/LDST1) optimal on all 7 files.
-- Docs:
-  - docs/RVM16-C-Manual.adoc + HTML;
-  - docs/RVM16-C-Evaluation.md;
-  - docs/Zhihu-RVM16-C.md + figs.
+Spike-C source: D:/dsh_workspace/spike-c, mirrored at spike-c/ in this repo.
 
-## Baseline benchmark runs
+- ALU-12: add/sub/and/or/xor/sll/srl/sra/slt/sltu, expected values checked.
+- M: mulh/mulhsu/mulhu/div/divu/rem/remu, expected values checked.
+- F32: all 20 ops; fadd/fsub/fmul/fdiv/fsqrt/fmin/fmax/fsgnj/fsgnjn/fsgnjx/
+  feq/flt/fle/fcvt.s.w/fcvt.w.s/fclass/fmv.x.w/fmv.w.x/flw/fsw.
+- CSR: csrw/csrr/csrs/csrc (csrw/csrr with mscratch, csrs/csrc bit set/clear).
+- SYS: ecall/ebreak via trap handler, mret, fence, fence.i, wfi via CLINT
+  timer interrupt.
+- Zcb: lbu/lh/lhu/sb/sh/zext.b/h/sext.b/h/not, RC=0.  sext.b/h require Zbb;
+  zext.w requires Zba on RV32 and is optional.
+- FIR 26 B (x8=70), sum 20 B (x8=10), GP/PC, Zcmp, Zcmt, Zcf encodings.
 
-- Dhrystone: RV32EC+Zc* code runs on Spike RV32IMC, RC=0, .text 2206 B.
-- CoreMark: RV32EC+Zc* code runs on Spike RV32IMC, RC=0, .text 6338 B
-  (ITERATIONS=10 but timer stubbed; timing not meaningful).
-- These are baseline runs, not RVM16-C binaries.
-- Linpack: double precision, RVM16-C F32-only; not run.
+## Benchmarks
 
-## What is not done
+These are RV32EC+Zc* baseline binaries, not RVM16-C binaries.  RVM16-C has no
+C compiler, so its Dhrystone/CoreMark numbers are still static-model results.
 
-- Full LLVM code generator/Clang ABI/libc: only MC exists.
-- Dhrystone/CoreMark are model-based, not compiled RVM16-C binaries.
-- Linpack is double precision and cannot run on F32-only RVM16-C; a
-  single-precision port is required.
-- GitHub remote push and Zhihu publishing need user credentials.
+| Benchmark | Result | Notes |
+|---|---|---|
+| Dhrystone | RC=0, self-check values correct | .text about 3.3 KB incl. crt0/printf/stubs |
+| CoreMark | RC=0, CRC final 0x4983, "Correct operation validated" | seeds 0; clock/timer stubs |
+| Linpack | RC=0, KFLOPS 5.00, n=50 | float port; clock is a deterministic stub |
+
+## Repository
+
+- https://github.com/miloee/rvm16
+- main branch and tags rvm16c-v0.1, spike-c-v0.1
+- spike-c/ complete source overlay; bench/c/ instruction tests; bench/linpack/
+  float port; docs/RVM16-C-Manual.adoc + HTML.
+
+## Not done
+
+- Full LLVM code generator/Clang ABI/libc.
+- RVM16-C-compiled Dhrystone/CoreMark/Linpack binaries.
+- Every individual RVC encoding is not enumerated; inherited RVC is exercised
+  through the programs and the block tests.
+- Zbb/Zba are not in the baseline profile; c.sext.b/h and c.zext.w are
+  conditional on them.
 
 ## Reproduce
 
-Spike-C FIR/sum:
-  wsl -d Ubuntu -- bash /mnt/d/dsh_workspace/_tmp_fir_sum_c.sh
-
-LLVM MC FIR/sum:
-  wsl -d Ubuntu -- bash /mnt/d/dsh_workspace/_tmp_run_llvm_c.sh
-
-Model:
-  wsl -d Ubuntu -- python3 /mnt/d/dsh_workspace/rva-e/tools/model_c.py     /mnt/d/dsh_workspace/benchmarks/dhrystone/.../dhry_pack_1.s     /mnt/d/dsh_workspace/benchmarks/coremark/obj-c/core_main.s ...
-
-Block bound:
-  wsl -d Ubuntu -- python3 /mnt/d/dsh_workspace/rva-e/tools/block_bound.py ...
-
-## 2026-11-18 update
-
-- F32: all 20 instructions executed on Spike-C with expected values.
-- SYS: ecall/ebreak/mret tested with a trap handler; fence/fence.i pass.
-- CSR: csrw/csrr/csrs/csrc pass.
-- CoreMark: seeds 0, CRC final 0x4983, "Correct operation validated", RC=0.
-- Linpack float: still timing out; not validated.
-
-- Zcb: lbu/lh/lhu/sb/sh/zext.b/sext.b/not tested (sext.b needs Zbb), RC=0.
-- Linpack: KFLOPS prints 0.00 because __extendsfdf2 stub returns 0; needs real softfloat.
-
-- Linpack: float port at n=50 runs to completion, RC=0, KFLOPS 5.00
-  (clock is a deterministic stub, not wall time).
-
-- WFI: timer interrupt test passes; handler runs, wfi returns, RC=0.
-- Benchmarks: Dhrystone (self-check), CoreMark (CRC 0x4983), Linpack (KFLOPS 5.00), all RC=0.
+- Instruction tests: bench/c/test_*.sh and their .s programs.
+- Linpack: bench/linpack/build.sh, bench/linpack/run.sh.
+- Dhrystone/CoreMark ports: bench/benchmarks/README.md.
+- Model: tools/model_c.py; block bound: tools/block_bound.py.

@@ -17,8 +17,8 @@ Run FIR/sum:
 
 Status of this overlay:
 
-- implemented and tested: add/sub, bne/blt/blez, lw/sw, GP/PC, Zcmp, Zcmt;
-- source added but build/test pending: and/or/xor/sll/srl/sra/slt/sltu;
-- not implemented: M (mulh/div/rem), F32, CSR (except csrw cold path), SYS.
-
-The full patch against the RVA-E16 tree is patches/spike-c/0001-spike-c-full.patch.
+- tested: ALU-12 (10), M (7), F32 (20), CSR csrw/csrr/csrs/csrc,
+  SYS ecall/ebreak/mret/fence/fence.i/wfi, Zcb, branches, GP/PC, LD/ST,
+  Zcmp, Zcmt;
+- fcmp writes x7 (not x31); x16-x31 are non-architectural in RVM16-C;
+- c.sext.b/h require Zbb (run with Zbb enabled).
