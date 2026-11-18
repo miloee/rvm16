@@ -11,6 +11,7 @@ Registers must be in x8-x15 (s0/s1/a0-a5); add/sub/mv cannot encode x16-x31.
 import sys
 
 ALLOWED = {"a0", "a1", "a2", "a3", "a4", "a5", "s0", "s1"}
+LS_ALLOWED = ALLOWED | {"ra"}
 BASES = {"s0", "s1", "sp", "gp"}
 TEMP_ORDER = ["a4", "a5", "a3", "a2", "a1", "a0", "s0", "s1"]
 
@@ -18,6 +19,11 @@ TEMP_ORDER = ["a4", "a5", "a3", "a2", "a1", "a0", "s0", "s1"]
 def check(reg):
     if reg not in ALLOWED:
         raise SystemExit("register %s is outside x8-x15" % reg)
+
+
+def check_ls(reg):
+    if reg not in LS_ALLOWED:
+        raise SystemExit("register %s is outside x0-x15" % reg)
 
 
 def pick_temp(used):
@@ -58,13 +64,16 @@ def expand(op, rest):
         return ["  c.li %s, %s" % (a[0], a[1])]
     if op == "mv":
         return mv(a[0], a[1])
+    if op in ("call", "jal"):
+        target = rest.split(",")[-1].strip()
+        return ["  c.jal %s" % label(target)]
 
     if op in ("lw", "sw"):
         reg = a[0]
         mem = a[1]
         off, base = mem[:-1].split("(")
         off = int(off)
-        check(reg)
+        check_ls(reg)
         if off % 4 != 0 or off // 4 > 3:
             raise SystemExit("offset %d out of range for %s" % (off, op))
         field = off // 4
@@ -103,6 +112,8 @@ def expand(op, rest):
 
     if op == "addi":
         rd, rs1, imm = a[0], a[1], a[2]
+        if rd == rs1 and rd in ("sp", "ra"):
+            return ["  c.addi %s, %s" % (rd, imm)]
         check(rd); check(rs1)
         out = [] if rd == rs1 else mv(rd, rs1)
         return out + ["  c.addi %s, %s" % (rd, imm)]

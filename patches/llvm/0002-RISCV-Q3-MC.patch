@@ -1,5 +1,5 @@
 diff --git a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
-index c62a714c24..2a5203c572 100644
+index c62a714c24..051f050985 100644
 --- a/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
 +++ b/llvm/lib/Target/RISCV/Disassembler/RISCVDisassembler.cpp
 @@ -463,6 +463,16 @@ static DecodeStatus decodeXqccmpRlistS0(MCInst &Inst, uint32_t Imm,
@@ -76,9 +76,9 @@ index c62a714c24..2a5203c572 100644
 +      static const unsigned Bases[4] = {RISCV::X8, RISCV::X9, RISCV::X2,
 +                                        RISCV::X3};
 +      MI.setOpcode(RISCV::Q3_LW);
-+      MI.addOperand(R(RISCV::X8 + ((Insn >> 7) & 7)));
-+      MI.addOperand(R(Bases[(Insn >> 5) & 3]));
-+      MI.addOperand(I((Insn >> 2) & 7));
++      MI.addOperand(R(RISCV::X0 + ((Insn >> 6) & 0xF)));
++      MI.addOperand(R(Bases[(Insn >> 4) & 3]));
++      MI.addOperand(I((Insn >> 2) & 3));
 +    }
 +    return MCDisassembler::Success;
 +  case 8:
@@ -88,9 +88,9 @@ index c62a714c24..2a5203c572 100644
 +      static const unsigned Bases[4] = {RISCV::X8, RISCV::X9, RISCV::X2,
 +                                        RISCV::X3};
 +      MI.setOpcode(RISCV::Q3_SW);
-+      MI.addOperand(R(RISCV::X8 + ((Insn >> 7) & 7)));
-+      MI.addOperand(R(Bases[(Insn >> 5) & 3]));
-+      MI.addOperand(I((Insn >> 2) & 7));
++      MI.addOperand(R(RISCV::X0 + ((Insn >> 6) & 0xF)));
++      MI.addOperand(R(Bases[(Insn >> 4) & 3]));
++      MI.addOperand(I((Insn >> 2) & 3));
 +    }
 +    return MCDisassembler::Success;
 +  case 5: {
@@ -273,7 +273,7 @@ index 9c977dac23..9dcb253186 100644
  
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
 new file mode 100755
-index 0000000000..31fac9086f
+index 0000000000..c0ee930925
 --- /dev/null
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
 @@ -0,0 +1,286 @@
@@ -340,31 +340,31 @@ index 0000000000..31fac9086f
 +
 +let hasSideEffects = 0, mayLoad = 1, mayStore = 0 in
 +class Q3_LW_Inst<bits<4> f4, bits<2> funct2, string op>
-+    : RVInst16<(outs GPRC:$rd), (ins BaseGPR:$base, uimm3:$imm),
++    : RVInst16<(outs GPR4:$rd), (ins BaseGPR:$base, uimm2:$imm),
 +               op, "$rd, ${imm}(${base})", [], InstFormatOther> {
-+  bits<3> rd;
++  bits<4> rd;
 +  bits<2> base;
-+  bits<3> imm;
++  bits<2> imm;
 +  let Inst{15-12} = f4;
 +  let Inst{11-10} = funct2;
-+  let Inst{9-7} = rd;
-+  let Inst{6-5} = base;
-+  let Inst{4-2} = imm;
++  let Inst{9-6} = rd;
++  let Inst{5-4} = base;
++  let Inst{3-2} = imm;
 +  let Inst{1-0} = 0b11;
 +}
 +
 +let hasSideEffects = 0, mayLoad = 0, mayStore = 1 in
 +class Q3_SW_Inst<bits<4> f4, bits<2> funct2, string op>
-+    : RVInst16<(outs), (ins GPRC:$rs2, BaseGPR:$base, uimm3:$imm),
++    : RVInst16<(outs), (ins GPR4:$rs2, BaseGPR:$base, uimm2:$imm),
 +               op, "$rs2, ${imm}(${base})", [], InstFormatOther> {
-+  bits<3> rs2;
++  bits<4> rs2;
 +  bits<2> base;
-+  bits<3> imm;
++  bits<2> imm;
 +  let Inst{15-12} = f4;
 +  let Inst{11-10} = funct2;
-+  let Inst{9-7} = rs2;
-+  let Inst{6-5} = base;
-+  let Inst{4-2} = imm;
++  let Inst{9-6} = rs2;
++  let Inst{5-4} = base;
++  let Inst{3-2} = imm;
 +  let Inst{1-0} = 0b11;
 +}
 +
