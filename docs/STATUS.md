@@ -68,3 +68,6 @@ Block bound:
 
 - Linpack: float port at n=50 runs to completion, RC=0, KFLOPS 5.00
   (clock is a deterministic stub, not wall time).
+
+- WFI: timer interrupt test passes; handler runs, wfi returns, RC=0.
+- Benchmarks: Dhrystone (self-check), CoreMark (CRC 0x4983), Linpack (KFLOPS 5.00), all RC=0.
