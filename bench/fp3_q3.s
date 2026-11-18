@@ -1,6 +1,9 @@
 .text
 .globl _start
 _start:
+  c.li a0, 6
+  c.slli a0, 12
+  c.csrw 1, a0
   c.li a5, 1
   c.li t0, 16
   c.slli t0, 2

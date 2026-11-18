@@ -149,10 +149,10 @@ index 9c977dac23..9dcb253186 100644
  
 diff --git a/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
 new file mode 100755
-index 0000000000..9fc4fe3933
+index 0000000000..31fac9086f
 --- /dev/null
 +++ b/llvm/lib/Target/RISCV/RISCVInstrInfoQ3.td
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,286 @@
 +//===-- RISCVInstrInfoQ3.td - RVA-E16 Q3 instructions --------*- tablegen -*-===//
 +//
 +// Q3: bits[1:0] = 11, 16-bit instructions (RVA-E16).
@@ -422,6 +422,22 @@ index 0000000000..9fc4fe3933
 +def C_CSRW_Q3 : Q3_CSRW;
 +def C_CSRS_Q3 : Q3_CSRS;
 +def C_CSRC_Q3 : Q3_CSRC;
++}
++
++let hasSideEffects = 1, mayLoad = 0, mayStore = 0 in
++class Q3_SYS<bits<10> imm, string op>
++    : RVInst16<(outs), (ins), op, "", [], InstFormatOther> {
++  let Inst{15-12} = 0b1111;
++  let Inst{11-2} = imm;
++  let Inst{1-0} = 0b11;
++}
++
++let Predicates = [HasStdExtZc16q3] in {
++def C_ECALL_Q3   : Q3_SYS<0, "c.ecall">;
++def C_MRET_Q3    : Q3_SYS<2, "c.mret">;
++def C_WFI_Q3     : Q3_SYS<3, "c.wfi">;
++def C_FENCE_Q3   : Q3_SYS<4, "c.fence">;
++def C_FENCE_I_Q3 : Q3_SYS<5, "c.fence.i">;
 +}
 diff --git a/llvm/lib/Target/RISCV/RISCVRegisterInfo.td b/llvm/lib/Target/RISCV/RISCVRegisterInfo.td
 index 58af1f863f..7ab52d9267 100644
