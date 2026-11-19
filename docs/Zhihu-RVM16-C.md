@@ -1,4 +1,4 @@
-# 把 RISC-V 压到 16 位：RVM16-C 的完整探索
+# 把 RISC-V 压到 16 位：RVM16-C 的方案与取舍
 
 > 一句话结论：RVM16-C 在 FIR/sum 上实测更小，Dhrystone 模型小 19–24%，CoreMark 约持平；它不是通用 C 的 code-size 银弹，而是“RVC 兼容、面向 code-size 敏感场景”的一个独立 profile 提案。机制上它进入 Thumb 的 code-size 量级，但还没有同源 C 的 Thumb 实测。
 
@@ -12,7 +12,7 @@ RVA 系列 application profile 把 C 作为基本组成之一，解决的是“�
 
 ## 2. 起点：RVM16-A，32 个 GPR
 
-最早做的是 RVM16-A：32 个 GPR，FLEN=32，16 个 f4 block，仍然严格 16 位；32 GPR 是作为对照。A 有完整的手册、Spike 实现和 LLVM MC。
+最早做的是 RVM16-A：32 个 GPR，FLEN=32，16 个 f4 block，仍然严格 16 位；32 GPR 是作为对照。A 有完整的手册和原型实现。
 
 但 32 GPR 的方案里，编码空间很快不够用：rd/rs1/rs2 各 5 位就是 15 位，只剩 1 位做 opcode；要么牺牲 block 数，要么牺牲寻址模式。A 能跑，但它没有回答“16 位里怎么把 C 写小”这个问题。
 
@@ -68,50 +68,7 @@ RVA 系列 application profile 把 C 作为基本组成之一，解决的是“�
 
 Zcb 里有两个容易忽略的依赖：c.sext.b/h 需要 Zbb；c.zext.w 在 RV32 需要 Zba。它们不是无条件可用的，手册里已经写成 optional。
 
-## 6. Spike 原型：从“能跑”到“跑对”
-
-Spike-C 是改过的 Spike：insn_length=2，32 位 opcode 被过滤，quadrant 11 的 block 走新的 insn。
-
-最早只跑 FIR/sum：
-
-- FIR 26 B，x8=70；
-- sum 20 B，x8=10。
-
-后面一块块补：
-
-- 分支 bne/blt/blez；
-- GP/PC：lwgp/swgp/lwpc；
-- LD/ST：lwc/swc；
-- Zcmp：cm.push/pop，x10=7；
-- Zcmt：jvt=0x80000240（64 B 对齐），cm.jt 0 跳转成功；
-- Zcf：c.flw/c.fsw/c.flwsp/c.fswsp 编码验证。
-
-再往后是整组测试：
-
-- ALU-12 全 10 条；
-- M 全 7 条；
-- F32 全 20 条；
-- CSR csrw/csrr/csrs/csrc；
-- SYS ecall/ebreak/mret/fence/fence.i/wfi；
-- Zcb 的 lbu/lh/lhu/sb/sh/zext.b/h/sext.b/h/not。
-
-这里踩过的坑：
-
-- Zcmt 测试一开始用 x31 传 CSR 地址；但 C 只有 x0–x15，x31 是非架构寄存器。后来把 cold CSR 路径改成 x7，测试也改成 x7。
-- fcmp 在 A 里写 x31；C 里同样改成 x7。
-- WFI 一开始不进 handler：mstatus 的 MIE、mtvec、mie、mtimecmp 要按顺序设；最后用 CLINT timer 跑通，handler 实际执行、wfi 返回。
-
-## 7. LLVM MC：先解决“能编码”
-
-完整后端没有做，先做 MC：
-
-- +zc16q3 下独立助记符：c.addc/c.subc/c.andc/c.orc/c.xorc/c.sllc/c.srlc/c.srac/c.sltc/c.sltuc，c.bnec/c.bltc/c.blezc，c.lwgc/c.swgc/c.lwpc，c.lwc/c.swc；
-- 分支 label fixup：fixup_riscv_zvmc_branch4/7；
-- FIR/sum 用 .Lloop/.Lend 汇编，26/20 B，Spike 跑 70/10。
-
-MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF relocation、branch offset 0 的 fixup，都是逐个补的。
-
-## 8. 数据：哪些是实测，哪些是模型
+## 6. 数据：哪些是实测，哪些是模型
 
 | 内核 | RV32EC+Zc* | RVM16-C | 性质 |
 |---|---:|---:|---|
@@ -132,29 +89,18 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 - 栈访问：Dhrystone 6.2%，CoreMark 11.7%。
 - 分支 trampoline：Dhrystone 7/12，CoreMark 46/80（模型判断）。
 
-三个 benchmark 的实际运行是 **RV32EC+Zc* baseline**，不是 RVM16-C 二进制：
+三个 benchmark 已经作为 **RV32EC+Zc* baseline** 跑完：Dhrystone 自检正确，CoreMark CRC 0x4983，Linpack float n=50 KFLOPS 5.00；它们不是 RVM16-C 的 C 二进制。
 
-- Dhrystone：自检值全部正确，RC=0；
-- CoreMark：seeds 0，CRC final 0x4983，“Correct operation validated”，RC=0；
-- Linpack：single-precision 端口，n=50，KFLOPS 5.00，RC=0；clock 是确定性 stub，只证明端口和输出路径。
+## 7. 全流程复盘（方案层）
 
-## 9. 全流程复盘
+1. RVM16-A：32 GPR、FLEN=32、16 block，先证明“16 位编码空间”可行。
+2. 转向 C：32 → 16 GPR；8 GPR 作为备选被否；F32 保留。
+3. 编码探索：三地址 c.add3/c.sub3 原型 → 放弃；两地址 + 融合分支。
+4. 指令集成形：ALU-12、bne/blt/blez、GP/PC、LD/ST、M、F32、CSR/SYS。
+5. Zc 集成：Zca/Zcb/Zcmp/Zcf/Zcmt，Zcd 保留，Zcmop 不加。
+6. 定位：不是替代 RVC，而是给 code-size 敏感场景一个独立 profile，并把 Thumb 作为 code-size 对照。
 
-按阶段看，这个项目走过：
-
-1. 最初想找 RVV 的修改流程，后来明确：这是标量 ISA，不是向量。
-2. RVM16-A：32 GPR、FLEN=32、16 block，先证明“16 位编码空间”可行。
-3. 转向 C：32 → 16 GPR；8 GPR 作为备选被否；F32 保留。
-4. 编码探索：三地址 c.add3/c.sub3 原型 → 放弃；两地址 + 融合分支。
-5. 指令集成形：ALU-12、bne/blt/blez、GP/PC、LD/ST、M、F32、CSR/SYS。
-6. Zc 集成：Zca/Zcb/Zcmp/Zcf/Zcmt，Zcd 保留，Zcmop 不加。
-7. Spike-C 原型：从 FIR/sum 到 ALU/M/F32/CSR/SYS/Zcb/WFI 全组测试。
-8. LLVM MC：独立助记符、分支 fixup、FIR/sum 26/20。
-9. 评估：静态模型、spill/trampoline/globals、block-count 有界最优。
-10. benchmark：Dhrystone/CoreMark/Linpack 的 RV32EC+Zc* baseline 全部跑完。
-11. 文档与仓库：先写手册再编码；按 RISC-V 社区 AsciiDoc 风格重写，补 WaveDrom 编码图；最后是知乎草稿和 GitHub。
-
-## 10. 结论与讨论
+## 8. 结论与讨论
 
 **严格 16 位不是通用 C 的 code-size 银弹。**
 
@@ -164,7 +110,7 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 - 和 Thumb 比，RVM16-C 少了 flags 和 32 位 Thumb-2，多了 RVC 兼容；
 - 和 RVC 比，它把“所有指令”都压到 16 位，代价是标准 32 位二进制不兼容。
 
-如果目标是“所有嵌入式都更小”，这个方案不成立；如果目标是“在 RVC 兼容前提下，给 code-size 敏感场景一个独立 profile”，它是有数据、有 Spike、有 MC、有 benchmark 的提案。
+如果目标是“所有嵌入式都更小”，这个方案不成立；如果目标是“在 RVC 兼容前提下，给 code-size 敏感场景一个独立 profile”，它是有数据、有原型、有 benchmark 的提案。
 
 ## 讨论：想听到的反馈
 
@@ -174,36 +120,7 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 4. Zbb/Zba 要不要进这个 profile？还是让 c.sext/c.zext.w 继续 optional？
 5. 哪些真实 workload 最能说明“RVC 不够、但又不想上 Thumb-2”？
 
-## 11. 代码与复现
-
-- GitHub: https://github.com/miloee/rvm16
-- Spike 分支: https://github.com/miloee/rvm16/tree/spike-c/spike-c
-- tags: rvm16c-v0.1, spike-c-v0.1
-- 手册: docs/RVM16-C-Manual.adoc / .html
-- 评估: docs/RVM16-C-Evaluation.md
-- 指令测试: bench/c/
-- Linpack 端口: bench/linpack/
-- LLVM MC patch: patches/llvm/0003-RISCV-Zvmc-MC.patch
-- Spike patch: patches/spike-c/0001-spike-c-full.patch
-
-复现入口：
-
-    git clone https://github.com/miloee/rvm16
-    cd rvm16/spike-c
-    mkdir build && cd build
-    ../configure --prefix=$PWD/install
-    make -j20
-
-## 12. 还没做的
-
-- 完整 LLVM 后端/Clang ABI/libc：没有它，就没有 RVM16-C 的 C benchmark 二进制；
-- RVM16-C 自己的 Dhrystone/CoreMark/Linpack：现在只有 RV32EC+Zc* baseline；
-- RVC 全编码逐条枚举；
-- MILP 全局最优性下界；
-- Zbb/Zba 是否进入 profile 的最终决策；
-- 面积/功耗/频率，而不只是 code size。
-
-## 13. 相关工作与横向对比
+## 9. 相关工作与横向对比
 
 | | RVC | RVM16-C | ARM Thumb-2 | x86 |
 |---|---|---|---|---|
@@ -222,7 +139,7 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 - x86 用变长指令换密度，代价是解码复杂；
 - RVM16-C 是“全部 16 位、没有逃生口”，用兼容性换固定取指宽度。
 
-## 14. 和 Thumb 比 code size
+## 10. 和 Thumb 比 code size
 
 这是这篇文章最想讨论的点之一：**RVM16-C 在机制上是有资格和 Thumb 比 code size 的。**
 
@@ -252,7 +169,7 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 4. 比 .text、栈访问、分支数量、trampoline；
 5. 同时记录 IPC/周期，避免只看 code size。
 
-## 15. 接受/放弃判据
+## 11. 接受/放弃判据
 
 一个 code-size profile 不能只靠“看起来更小”。我建议用下面的判据决定是否继续：
 
@@ -265,7 +182,7 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 
 如果 Dhrystone 收益低于 15%，或者 CoreMark 明显退化，这个 profile 就不值得单独存在；如果 Thumb 对比输得很明显，就应该回到 RVC/Zc 路线，而不是继续加指令。
 
-## 16. 性能、面积、功耗
+## 12. 性能、面积、功耗
 
 code size 只是第一维。16 位固定宽度的影响至少有三面：
 
@@ -279,9 +196,9 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 统计动态指令数、取指字节、分支数；
 - 对比 RV32EC+Zc* 和 Thumb-2 的 cycles/byte。
 
-## 17. ABI 与工具链
+## 13. ABI 与工具链
 
-16 GPR 不是“把 x31 删掉”这么简单：
+16 GPR 不是“把寄存器数量砍掉”这么简单：
 
 - 调用约定要重新定义参数/返回值/callee-saved；
 - varargs、结构体返回、浮点参数需要新 ABI；
@@ -292,16 +209,16 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 
 LLVM 目前只有 MC，没有 TargetMachine/CC/frame lowering/isel，所以还没有 RVM16-C 的 C 二进制。这是最大的工程缺口。
 
-## 18. 形式化与验证
+## 14. 验证到什么程度
 
-现在已经有的验证：
+方案不是只在纸上：
 
-- 16 个 f4 block 的分配检查；
-- Spike-C 的 filter/insn 测试；
-- ALU/M/F32/CSR/SYS/Zcb/WFI 的期望值测试；
-- FIR/sum、Zcmp、Zcmt、Zcf 的运行时测试。
+- f4 block 分配有检查；
+- 主要指令组有指令级期望值测试；
+- FIR/sum、Zcmp/Zcmt/Zcf 有运行时测试；
+- 三个 benchmark 作为 RV32EC+Zc* baseline 跑完。
 
-还不够的：
+但还没有：
 
 - 每条指令的编码/解码形式化检查；
 - RVC 00/01/10 与 Q3 的冲突/保留位检查；
@@ -309,7 +226,7 @@ LLVM 目前只有 MC，没有 TargetMachine/CC/frame lowering/isel，所以还�
 - 链接器 relaxation/relocation 的边界测试；
 - 形式化的“所有 16 位模式要么合法、要么明确非法”。
 
-## 19. 真实 workload 与生态
+## 15. 真实 workload 与生态
 
 Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile 有价值，需要：
 
@@ -319,7 +236,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - 工具链/库/调试器/OS 的支持成本；
 - 生态碎片化：多一个 ISA profile，编译器和库要不要多一套。
 
-## 20. 安全
+## 16. 安全
 
 固定 16 位、没有 32 位逃生口，对安全的影响没有被研究：
 
@@ -329,6 +246,35 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - 16 GPR 的寄存器压力可能增加栈 spill，影响泄漏面。
 
 这些目前都只是问题，不是结论。
+
+## 17. 代码与复现
+
+- GitHub: https://github.com/miloee/rvm16
+- Spike 分支: https://github.com/miloee/rvm16/tree/spike-c/spike-c
+- tags: rvm16c-v0.1, spike-c-v0.1
+- 手册: docs/RVM16-C-Manual.adoc / .html
+- 评估: docs/RVM16-C-Evaluation.md
+- 指令测试: bench/c/
+- Linpack 端口: bench/linpack/
+- LLVM 编码层 patch: patches/llvm/0003-RISCV-Zvmc-MC.patch
+- Spike patch: patches/spike-c/0001-spike-c-full.patch
+
+复现入口：
+
+    git clone https://github.com/miloee/rvm16
+    cd rvm16/spike-c
+    mkdir build && cd build
+    ../configure --prefix=$PWD/install
+    make -j20
+
+## 18. 还没做的
+
+- 完整 LLVM 后端/Clang ABI/libc：没有它，就没有 RVM16-C 的 C benchmark 二进制；
+- RVM16-C 自己的 Dhrystone/CoreMark/Linpack：现在只有 RV32EC+Zc* baseline；
+- RVC 全编码逐条枚举；
+- MILP 全局最优性下界；
+- Zbb/Zba 是否进入 profile 的最终决策；
+- 面积/功耗/频率，而不只是 code size。
 
 ## 参考资料
 
