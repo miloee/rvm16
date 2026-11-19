@@ -4,6 +4,8 @@ RISC-V 的 code size 讨论，绕不开 RVC。
 
 ## 1. 为什么 RVC 还不够
 
+RVA 系列 application profile 把 C 作为基本要求。这个要求是后面所有问题的起点，也是我不满意的地方：C 让常用指令变短，但 RVC 仍然是 32 位基座 + 16 位压缩，编码空间和 32 位指令的取舍没有消失。
+
 RVC 是 RISC-V 的压缩指令扩展（Compressed）。它的做法是：保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
 
 但只要你写过嵌入式 C，就会遇到几个很典型的场景。
@@ -19,13 +21,13 @@ RVC 是 RISC-V 的压缩指令扩展（Compressed）。它的做法是：保留 
 
 第二个是字符串和常量。printf("hello") 里的字符串地址、switch 跳转表、浮点常量，都可能在很远的地方，编译器要先 auipc/addi 或 lui/addi 把地址拼出来。
 
-第三个是 prologue/epilogue。一个稍微像样的函数，进来先 push 一堆 callee-saved 寄存器，出去再 pop。RVC 里栈调整和保存仍然常常落回 32 位；Zcmp 的 cm.push/cm.pop 是后来的扩展，不是 RVC 基座。
+第三个是 prologue/epilogue（函数入口/出口的栈帧建立与恢复）。一个稍微像样的函数，进来先 push 一堆 callee-saved（被调用者保存）寄存器，出去再 pop。RVC 里栈调整和保存仍然常常落回 32 位；Zcmp 的 cm.push/cm.pop 是后来的扩展，不是 RVC 基座。
 
 第四个是 compare+branch。if (a < b) 在 RISC-V 上要先 slt，再 bne；两条指令。x86/ARM 有 flags，可以 cmp + jcc；RISC-V 没有 flags，这是设计选择，但代价就是 compare 和 branch 分开。
 
 这些问题单独看都不大，叠在一起就是：**RVC 让“常用指令”变短了，但没有让“地址构造、栈帧、比较分支”消失。**
 
-RVA 系列 application profile 把 C 作为基本组成，解决的是“应用处理器也要 code size”。但在更小的嵌入式场景里，RVC 仍然不够。这就是我想讨论的空隙。
+RVA 把 C 作为基本要求，是为了“应用处理器也要 code size”。但这也意味着 RVA 必须接受 32 位基座 + 16 位压缩的编码约束。这也是我后面想分开 RVA 和 code-size profile 的原因。
 
 ## 2. 三条路线：x86、Thumb、RVC
 
@@ -106,7 +108,7 @@ RVM16-C 的起点不是 16 GPR，而是 32 GPR。
 
 所以 32 GPR 的方案，要么牺牲 block 数，要么牺牲寻址模式，要么退化成“每条指令都只能做很少的事”。
 
-中间认真考虑过 8 GPR：如果 16 个放不下，就退到 8 个。但 8 个 GPR 的 spill/ABI 代价太大。16 个是一个折中：4 位寄存器字段，刚好够两地址 + funct，也够 GP/PC 的 rd 和 offset。
+中间认真考虑过 8 GPR：如果 16 个放不下，就退到 8 个。但 8 个 GPR 的 spill（寄存器溢出）/ABI（应用二进制接口）代价太大。16 个是一个折中：4 位寄存器字段，刚好够两地址 + funct，也够 GP/PC 的 rd 和 offset。
 
 这就是为什么 RVM16-C 是 16 GPR，而不是 32，也不是 8。
 
@@ -281,7 +283,7 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 1. 同一份 Dhrystone/CoreMark/Linpack C；
 2. clang -O2 -mthumb 生成 Thumb-2 二进制；
 3. RVM16-C 用 translator/后端生成二进制；
-4. 比 .text、栈访问、分支数量、trampoline；
+4. 比 .text、栈访问、分支数量、trampoline（跳转垫片）；
 5. 同时记录 IPC/周期，避免只看 code size。
 
 ## 11. 数据：哪些是实测，哪些是模型
@@ -377,7 +379,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 code size 只是第一维。16 位固定宽度的影响至少有三面：
 
 - **取指**：16 位对齐，取指带宽和 cache 行利用率可能更好；
-- **IPC**：没有 32 位长指令，复杂操作要拆成多条 16 位指令，动态指令数可能上升；
+- **IPC（每周期指令数）**：没有 32 位长指令，复杂操作要拆成多条 16 位指令，动态指令数可能上升；
 - **面积/功耗**：16 GPR + 16 FP 寄存器比 32 GPR 小，但译码/控制逻辑和更多指令数可能抵消。
 
 下一步需要补：
@@ -386,7 +388,7 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 统计动态指令数、取指字节、分支数；
 - 对比 RV32EC+Zc* 和 Thumb-2 的 cycles/byte。
 
-## 18. ABI 与工具链
+## 18. ABI（应用二进制接口）与工具链
 
 16 GPR 不是“减少寄存器数量”这么简单：
 
@@ -424,7 +426,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 
 - 固定宽度可能简化 decode，但不自动等于更安全；
 - 没有 32 位指令，某些攻击面（长指令、非对齐）变化；
-- ROP/JOP、CFI、指针完整性需要单独评估；
+- ROP/JOP（返回/跳转导向编程）、CFI（控制流完整性）、指针完整性需要单独评估；
 - 16 GPR 的寄存器压力可能增加栈 spill，影响泄漏面。
 
 这些目前都只是问题，不是结论。
@@ -449,3 +451,22 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
     mkdir build && cd build
     ../configure --prefix=$PWD/install
     make -j20
+
+## 23. 术语表
+
+- **RVA profile**：RISC-V 面向 application processor 的 profile，强调性能、生态和软件兼容。
+- **RVC**：RISC-V 的压缩指令扩展（Compressed），用 16 位编码表示常用指令。
+- **quadrant / f4 / block**：16 位编码里用低 2 位选 quadrant，用接下来的 4 位（f4）选指令块。
+- **32 位长指令**：标准 RISC-V 的 32 位编码，不是 16 位压缩形式。
+- **GP/PC-relative**：以 gp 或 PC 为基准加偏移访问数据，省掉构造完整地址的指令。
+- **prologue / epilogue**：函数入口/出口的栈帧建立与恢复。
+- **callee-saved**：被调用者保存寄存器，函数返回前要恢复。
+- **flags**：x86 EFLAGS / ARM APSR 里的条件标志；RISC-V 没有这套东西。
+- **fused branch**：把比较和分支合成一条指令，例如 c.blt。
+- **ABI**：应用二进制接口，规定参数、返回值、寄存器保存等调用约定。
+- **spill / reload**：寄存器不够时把值写到栈，再读回来。
+- **trampoline**：跳转垫片，分支超出范围时用一段小跳转中转。
+- **relaxation / relocation**：链接器对指令序列的松弛优化，以及重定位。
+- **IPC**：每周期执行的指令数。
+- **Zca / Zcb / Zcmp / Zcf / Zcmt / Zcd / Zcmop**：RVC 及 Zc 系列压缩扩展的不同子集。
+- **ROP / JOP / CFI**：返回导向编程、跳转导向编程、控制流完整性。
