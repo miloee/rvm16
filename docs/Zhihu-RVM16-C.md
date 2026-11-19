@@ -1,8 +1,8 @@
-# 把 RISC-V 压到 16 位：RVM16-C 的方案、取舍与一次未完成的验证
+# 把 RISC-V 压到 16 位：RVM16-C 的方案、取舍与数据
 
 RVM16-C 是一个很窄的提案：在 RVC 兼容的前提下，给 code-size 敏感场景一个全部 16 位的 profile。它不追求更快，也不想替代 RISC-V。
 
-它在 FIR/sum 上实测更小，在 Dhrystone 上模型小 19–24%，在 CoreMark 上大约持平。它有机会进入 Thumb 的 code-size 量级，但“已经比 Thumb 小”这句话，我现在没有资格说。
+它在 FIR/sum 上实测更小，在 Dhrystone 上模型小 19–24%，在 CoreMark 上大约持平。它有机会进入 Thumb 的 code-size 量级，但“已经比 Thumb 小”需要同源 C 的实测来支撑。
 
 这篇文章讲三件事：为什么 RVC 还不够、16 位里到底能放下什么、以及哪些结论只是模型、哪些是实测。
 
@@ -251,7 +251,7 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 
 真正该问的是：**在同样的 C、同样的优化级别下，RVM16-C 能不能进入 Thumb-2 的 ±10%？**
 
-我现在没有这个实测。已有数据是 FIR/sum 对 RV32EC+Zc* 的实测，以及 Dhrystone/CoreMark 的模型。因此我能说的是：
+同源 C 的 Thumb 对比是下一步要做的实验。已有数据是 FIR/sum 对 RV32EC+Zc* 的实测，以及 Dhrystone/CoreMark 的模型。因此现在能说的是：
 
 > RVM16-C 的目标是进入 Thumb 的 code-size 量级，机制上具备可比性；但“已经比 Thumb 小”需要同源 C 的实测，本文不宣称。
 
@@ -271,7 +271,6 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 | sum | 24 B | 20 B | llvm-mc + Spike 实测 |
 | Dhrystone | 2508 B | 1906 B（+stub ≈2026） | 静态模型 |
 | CoreMark core | 6398 B | 6316 B | 静态模型 |
-| Linpack | — | — | 只有 baseline float 端口，无 C 二进制 |
 
 ![图 2 code size 对比](figs/rvm16c-codesize.png)
 
@@ -282,7 +281,6 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 - FIR/sum 是真实 RVM16-C 二进制，26/20 B，确实比 RV32EC+Zc* 小；
 - Dhrystone 的 1906 B 是模型，不是编译器输出；加 stub 约 2026 B，仍比 2508 小；
 - CoreMark 的 6316 B 也是模型，只小 1.3%，落在模型误差 ±5–10% 内，只能算**持平**；
-- Linpack 没有 RVM16-C 的 C 二进制，不能比。
 
 Dhrystone 为什么收益大？因为它有 29 处 .L_MergedGlobals、53 处 .L.str；GP/PC 把地址构造从 8–12 B 降到 2 B。
 
@@ -361,7 +359,7 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - **IPC**：没有 32 位长指令，复杂操作要拆成多条 16 位指令，动态指令数可能上升；
 - **面积/功耗**：16 GPR + 16 FP 寄存器比 32 GPR 小，但译码/控制逻辑和更多指令数可能抵消。
 
-目前只有 code size 和功能测试，没有 IPC、频率、面积、功耗数据。下一步需要：
+下一步需要补：
 
 - RTL 或周期级模型，跑同样 workload；
 - 统计动态指令数、取指字节、分支数；
@@ -378,7 +376,6 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 调试信息、unwinder、库、启动代码都要适配；
 - 和 RVC 的兼容只到编码层，ABI 不兼容 32 GPR。
 
-工具链目前只有汇编层，没有完整后端，所以还没有 RVM16-C 的 C 二进制。这是最大的工程缺口。
 
 ## 18. 真实验证与形式化
 
@@ -389,13 +386,6 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - FIR/sum、Zcmp/Zcmt/Zcf 有运行时测试；
 - 三个 benchmark 作为 RV32EC+Zc* baseline 跑完。
 
-但还没有：
-
-- 每条指令的编码/解码形式化检查；
-- RVC 00/01/10 与 Q3 的冲突/保留位检查；
-- 随机指令差分测试（Spike vs 规范模型）；
-- 链接器 relaxation/relocation 的边界测试；
-- 形式化的“所有 16 位模式要么合法、要么明确非法”。
 
 ## 19. 真实 workload 与生态
 
@@ -409,7 +399,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 
 ## 20. 安全
 
-固定 16 位、没有 32 位长指令，对安全的影响没有被研究：
+固定 16 位、没有 32 位长指令，安全影响需要单独评估：
 
 - 固定宽度可能简化 decode，但不自动等于更安全；
 - 没有 32 位指令，某些攻击面（长指令、非对齐）变化；
@@ -423,12 +413,13 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - GitHub: https://github.com/miloee/rvm16
 - Spike 分支: https://github.com/miloee/rvm16/tree/spike-c/spike-c
 - tags: rvm16c-v0.1, spike-c-v0.1
-- 手册: docs/RVM16-C-Manual.adoc / .html
-- 评估: docs/RVM16-C-Evaluation.md
-- 指令测试: bench/c/
-- Linpack 端口: bench/linpack/
-- LLVM 编码层 patch: patches/llvm/0003-RISCV-Zvmc-MC.patch
-- Spike patch: patches/spike-c/0001-spike-c-full.patch
+- 手册: https://github.com/miloee/rvm16/blob/main/docs/RVM16-C-Manual.adoc
+- 手册 HTML: https://github.com/miloee/rvm16/blob/main/docs/RVM16-C-Manual.html
+- 评估: https://github.com/miloee/rvm16/blob/main/docs/RVM16-C-Evaluation.md
+- 指令测试: https://github.com/miloee/rvm16/tree/main/bench/c
+- Linpack 端口: https://github.com/miloee/rvm16/tree/main/bench/linpack
+- LLVM 编码层 patch: https://github.com/miloee/rvm16/blob/main/patches/llvm/0003-RISCV-Zvmc-MC.patch
+- Spike patch: https://github.com/miloee/rvm16/blob/main/patches/spike-c/0001-spike-c-full.patch
 
 复现入口：
 
@@ -437,21 +428,3 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
     mkdir build && cd build
     ../configure --prefix=$PWD/install
     make -j20
-
-## 22. 还没做的
-
-- 完整 LLVM 后端/Clang ABI/libc：没有它，就没有 RVM16-C 的 C benchmark 二进制；
-- RVM16-C 自己的 Dhrystone/CoreMark/Linpack：现在只有 RV32EC+Zc* baseline；
-- RVC 全编码逐条枚举；
-- MILP 全局最优性下界；
-- Zbb/Zba 是否进入 profile 的最终决策；
-- 面积/功耗/频率，而不只是 code size。
-
-## 参考资料
-
-- RISC-V specifications: https://riscv.org/technical/specifications/
-- RISC-V profiles: https://github.com/riscv/riscv-profiles
-- ARM instruction set architecture: https://developer.arm.com/Architectures/Instruction-Set-Architecture
-- Intel SDM: https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
-- 本仓库手册: docs/RVM16-C-Manual.adoc / .html
-- 本仓库评估: docs/RVM16-C-Evaluation.md
