@@ -1,10 +1,16 @@
-# 把 RISC-V 压到 16 位：RVM16-C 的方案、取舍与数据
+# 如果 RISC-V 只剩 16 位：一次关于代码体积的实验
 
-RISC-V 的 code size 讨论，绕不开 RVC。
+**RVM16-C：给 code-size 敏感场景的一个独立 profile**
+
+假设你手上有一颗 32 KB Flash 的 MCU。程序编译出来 30 KB，刚刚好；产品经理说，再加一个功能，至少得再省 10%。
+
+你打开反汇编，发现 RVC 已经把常用指令压到 16 位了，但全局地址、字符串地址、prologue、compare+branch 还是 32 位。
+
+RISC-V 的 RVA profile 把 C 作为基本要求，就是为了解决这类问题。但我对这个要求不满意：它把 RVA 和 16 位压缩绑在一起，而 RVA 本来应该服务的是高性能 application processor。
+
+这篇文章讲我为什么不满意，以及我想到的替代方案。
 
 ## 1. 为什么 RVC 还不够
-
-RVA 系列 application profile 把 C 作为基本要求。这个要求是后面所有问题的起点，也是我不满意的地方：C 让常用指令变短，但 RVC 仍然是 32 位基座 + 16 位压缩，编码空间和 32 位指令的取舍没有消失。
 
 RVC 是 RISC-V 的压缩指令扩展（Compressed）。它的做法是：保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
 
@@ -27,8 +33,6 @@ RVC 是 RISC-V 的压缩指令扩展（Compressed）。它的做法是：保留 
 
 这些问题单独看都不大，叠在一起就是：**RVC 让“常用指令”变短了，但没有让“地址构造、栈帧、比较分支”消失。**
 
-RVA 把 C 作为基本要求，是为了“应用处理器也要 code size”。但这也意味着 RVA 必须接受 32 位基座 + 16 位压缩的编码约束。这也是我后面想分开 RVA 和 code-size profile 的原因。
-
 ## 2. 三条路线：x86、Thumb、RVC
 
 在动手之前，先看别人怎么解决 code size。
@@ -40,6 +44,10 @@ ARM 的 Thumb 是另一条路：16 位子集为主，Thumb-2 再用 32 位长指
 RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位指令，只是给常用指令加了一套 16 位别名。
 
 这三条路有一个共同点：**都保留了更长的 32 位指令。** 这里的“32 位长指令”指标准 RISC-V 的 32 位编码，不是 16 位压缩形式。
+
+![图 1 四种指令集宽度对比](figs/rvm16c-widths.png)
+
+*图 1：x86 是变长，Thumb-2/RVC 是 16+32，RVM16-C 只有 16 位；横条每格是一条指令。*
 
 ## 3. RVA 与 C：我的看法
 
@@ -98,6 +106,10 @@ RVM16-C 的起点不是 16 GPR，而是 32 GPR。
 
 刚好 10 位。
 
+![图 2 16 位编码预算](figs/rvm16c-budget.png)
+
+*图 2：两地址 ALU 的 16 位字段分配。*
+
 如果寄存器是 32 个：
 
 - rd 5 位；
@@ -146,9 +158,9 @@ RVM16-C 的起点不是 16 GPR，而是 32 GPR。
 | 14 | CSR |
 | 15 | SYS |
 
-![图 1 RVM16-C block map](figs/rvm16c-blockmap.png)
+![图 3 RVM16-C block map](figs/rvm16c-blockmap.png)
 
-*图 1：quadrant 11 的 16 个 f4 block。RVC 的 00/01/10 不变。*
+*图 3：quadrant 11 的 16 个 f4 block。RVC 的 00/01/10 不变。*
 
 这个分配不是随意定的：
 
@@ -295,9 +307,9 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 | Dhrystone | 2508 B | 1906 B（+stub ≈2026） | 静态模型 |
 | CoreMark core | 6398 B | 6316 B | 静态模型 |
 
-![图 2 code size 对比](figs/rvm16c-codesize.png)
+![图 4 code size 对比](figs/rvm16c-codesize.png)
 
-*图 2：左为 FIR/sum 实测，右为 Dhrystone/CoreMark 静态模型。*
+*图 4：左为 FIR/sum 实测，右为 Dhrystone/CoreMark 静态模型。*
 
 怎么读这张表：
 
