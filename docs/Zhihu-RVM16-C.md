@@ -6,33 +6,81 @@ RVA profile 的讨论结果，是把 C 扩展放进基本要求。很多人对�
 
 不满意的点不只是“喜不喜欢 C”，而是它把两件事绑在了一起：RVA 的软件生态，和 code-size 敏感场景的压缩指令。RVA 服务的是 application processor，应该优先性能和面积，而不是强制背上 16 位压缩的编码约束。
 
-这篇文章讲我为什么对这个结果不满意，以及我想到的替代方案。
+这篇文章讲我为什么对这个结果不满意，以及我想到的替代方案。我的目标很明确：给嵌入式一个专门的 16 位 ISA，不要让 AP 侧和 RVV 为它买单。
 
-## 1. RVA 与 C：我的看法
+## 1. RVA 与 C：背景与我的看法
 
-RVA 是 RISC-V 面向 application processor 的 profile；RVC 是它的压缩指令扩展（Compressed），在 profile 里通常简称 C。
+### 1.1 RVA 是什么
 
-社区里有一种很自然的想法：RVC 已经在 RVA profile 里了，为什么还要再搞一套？
+RISC-V 的 profile 不是“某一个核”，而是一组扩展的打包，给软件一个共同目标。
+
+RVA 是面向 application processor 的 profile：跑 Linux、跑用户态、强调性能。它不是“所有 RISC-V”的 profile，MCU、实时、安全场景有各自的取舍。
+
+所以 RVA 的取舍应该服务 application processor，而不是把所有嵌入式需求都塞进来。
+
+### 1.2 C 是什么
+
+C 是 RISC-V 的压缩指令扩展（Compressed）。它保留 32 位指令作为基座，把最常见的操作压成 16 位。
+
+这样做的收益很直接：同样的 C 代码，常用指令变短，取指字节变少，I-cache 压力变小，Flash 占用也可能下降。
+
+但 RVC 没有让 32 位指令消失。地址构造、栈帧、比较分支，仍然可能落回 32 位。
+
+### 1.3 讨论结果：C 进了基本要求
+
+RVA profile 的讨论里，C 最后被放进了基本要求。
+
+支持的人理由很实际：
+
+- 工具链和库默认带 C，生态已经形成；
+- application processor 也吃 I-cache 和取指带宽；
+- profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化；
+- 现有 RVA 二进制默认 C，去掉会破坏兼容。
+
+这些理由都成立。但“成立”不等于“所有人都满意”。
+
+### 1.4 编码空间：C 的成本不只是解码
+
+16 位指令的低 2 位用来区分压缩指令和 32 位指令：
+
+- 00/01/10：RVC 压缩指令，占 3/4 的 16 位模式；
+- 11：32 位指令前缀，只剩 1/4。
+
+所以 RVC 不是“免费”的：它把 16 位模式空间的 3/4 拿走了，32 位指令只能从 11 前缀扩展。
+
+我在做自定义 RVV（RISC-V Vector 扩展）实现时，最直接的感受是：编码空间紧，不只是“少几条指令”，而是会改变整个实现。
+
+- SEW/LMUL 放进 CSR：每条 vector 指令都对 vtype 有隐含依赖，硬件很难放开并行度；
+- predicate 固定到 v0：predicate 和 data 挤在同一套寄存器命名空间，编译器要额外 copy，rename 也多一维；
+- LMUL 动态寄存器组：编译器做寄存器分配/着色时要考虑宽度变化，硬件 rename/dispatch 也要按 LMUL 拆 uop；
+- 编码空间不够，还会挡住一些更“值钱”的设计，比如 reuse 标记、scoreboard 标记、AI 的 FP4/INT4/MXFP8/LUT 指令。
+
+这些不全是 C 造成的，RVV 自己的取舍也占很大部分。但 RVC 占掉 3/4 的 16 位模式，是 AP 侧扩展要面对的一个背景约束。
+
+严格说，32 位编码空间仍有 2^30 个位置，“3/4”说的是 16 位模式，不是 32 位编码总量；但这个前缀约束是真实存在的。对 RVA 这种还要叠加 V/AI 扩展的 profile 来说，这是一个真实的成本。
+
+### 1.5 为什么很多人不满意
+
+不满意的核心，不是“喜不喜欢 C”，而是 RVA 的定位。
+
+- RVA 是高性能 application processor，16 位压缩带来的编码约束、解码复杂度，换来的 density 对这类核未必划算；
+- C 的初衷是嵌入式的 code size，不是 application 性能；RVA 继承 C，更多是生态和工具链的惯性；
+- C 一旦 mandatory，所有 RVA 实现都要支持压缩解码，profile 的边界会变模糊；
+- code-size 敏感的场景可以有自己的 profile，不必把 RVA 也拖进 16 位；
+- 嵌入式的 code size 需求是真实的，但应该由嵌入式 profile 承担，不要让 AP 侧 CPU 为它买单。
+
+所以“RVA 不该有 C”是一个立场，不是社区共识。反方也有道理，这一点必须承认。
+
+### 1.6 我的看法
 
 我的看法更直接：**RVA 不应该把 C 作为基本组成。**
 
-理由有四条：
+我的目的不是让 RVA 也变 16 位，而是给嵌入式一个专门的 16 位 ISA；AP 侧继续走 32 位，把编码空间留给 V/AI。
 
-- RVA 服务的是 application processor，性能和面积优先；16 位压缩带来的编码约束、解码复杂度，换来的 density 对高性能核未必划算；
-- C 的初衷是嵌入式的 code size，不是 application 性能；RVA 继承 C，更多是生态和工具链的惯性；
-- C 一旦 mandatory，所有 RVA 实现都要支持压缩解码，profile 的边界会变模糊；
-- code-size 敏感的场景可以有自己的 profile，不必把 RVA 也拖进 16 位。
+我的策略不是去删现有 RVA 的 C，而是把两件事分开：
 
-反方也有道理：
-
-- 现有 RVA 二进制和工具链默认 C，去掉会破坏兼容；
-- 应用处理器同样吃 I-cache 和取指带宽，C 不只是“小”，也可能更快；
-- 乱序核里 C 的解码成本可能没有想象中大；
-- profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化。
-
-所以“RVA 不该有 C”是一个立场，不是社区共识。
-
-我的策略不是去删现有 RVA 的 C，而是把两件事分开：RVA 继续服务 application processor；code-size 敏感场景拿一个独立 profile，自己承担“不兼容标准 32 位二进制”的代价。
+- RVA 继续服务 application processor；
+- code-size 敏感场景拿一个独立 profile，自己承担“不兼容标准 32 位二进制”的代价。
 
 长期看，如果 RVA 的目标是高性能 32 位，C 应该从 mandatory 里退出；但这需要 profile 版本和生态迁移，不是本文能解决的。短期我不主张直接删，因为现有二进制和工具链的代价太大。
 
@@ -467,6 +515,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 ## 23. 术语表
 
 - **RVA profile**：RISC-V 面向 application processor 的 profile，强调性能、生态和软件兼容。
+- **AP / application processor**：应用处理器，跑 Linux/用户态，强调性能。
 - **RVC**：RISC-V 的压缩指令扩展（Compressed），用 16 位编码表示常用指令。
 - **quadrant / f4 / block**：16 位编码里用低 2 位选 quadrant，用接下来的 4 位（f4）选指令块。
 - **32 位长指令**：标准 RISC-V 的 32 位编码，不是 16 位压缩形式。
@@ -481,6 +530,9 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - **relaxation / relocation**：链接器对指令序列的松弛优化，以及重定位。
 - **IPC**：每周期执行的指令数。
 - **Zca / Zcb / Zcmp / Zcf / Zcmt / Zcd / Zcmop**：RVC 及 Zc 系列压缩扩展的不同子集。
+- **RVV**：RISC-V Vector 扩展。
+- **SEW / LMUL / vtype**：向量元素宽度、向量寄存器组倍数、向量类型 CSR。
+- **predicate / v0**：向量掩码；RVV 把 v0 固定为掩码寄存器。
 - **rd / rs2**：指令里的目标寄存器字段和第二个源寄存器字段。
 - **off5**：5 位偏移字段，按 4 字节缩放。
 - **varargs**：可变参数函数。
