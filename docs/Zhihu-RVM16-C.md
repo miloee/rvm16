@@ -203,15 +203,138 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 - Zbb/Zba 是否进入 profile 的最终决策；
 - 面积/功耗/频率，而不只是 code size。
 
-## 可选补充（讨论用）
+## 13. 相关工作与横向对比
 
-如果要把这篇文章再往前推，可以加：
+| | RVC | RVM16-C | ARM Thumb-2 | x86 |
+|---|---|---|---|---|
+| 指令宽度 | 16 + 32 位 | 只有 16 位 | 16 + 32 位 | 1–15 B 变长 |
+| 32 位逃生口 | 有 | 无 | 有 | 不适用 |
+| GPR 数量 | 32 | 16 | 16（Thumb 状态） | 8/16 |
+| 条件码/flags | 无 | 无 | 有（APSR） | 有 |
+| 压缩 load/store | Zcf/Zcb | Zcf/Zcb | 有 | 不适用 |
+| 典型 prologue | Zcmp | Zcmp | push/pop | push/pop |
+| 二进制兼容 | RISC-V | 新 ISA | ARM | x86 |
 
-1. 和 Thumb-2、xtensa、RV32E 的同源 C 对比；
-2. 真实产品代码的 code-size 分布，而不只是 Dhrystone/CoreMark；
-3. 完整 ABI 下的 register pressure/spill 数据；
-4. 16 位取指对 IPC/功耗的影响；
-5. RVC 兼容的边界 case（链接器 relaxation、relocation、trampoline）；
-6. 形式化的编码冲突检查；
-7. 为什么不做 32 位逃生口，以及它带来的性能风险；
-8. 生态碎片化与工具链支持成本。
+这张表想说明的不是“谁更先进”，而是三者解决 code size 的层次不同：
+
+- RVC 是“32 位基座 + 16 位压缩”，保留 32 位逃生口；
+- Thumb-2 是“16 位为主 + 32 位扩展”，有 flags 和 32 位逃生口；
+- x86 用变长指令换密度，代价是解码复杂；
+- RVM16-C 是“全部 16 位、没有逃生口”，用兼容性换固定取指宽度。
+
+## 14. 和 Thumb 比 code size
+
+这是这篇文章最想讨论的点之一：**RVM16-C 在机制上是有资格和 Thumb 比 code size 的。**
+
+原因不是“16 位就一定更小”，而是几个机制叠加：
+
+- 所有指令 16 位，没有 32 位 fallback；Thumb-2 仍会在复杂寻址/大立即数时用 32 位；
+- GP/PC-relative 把全局/字符串地址构造压到 2 B；
+- c.bne/c.blt/c.blez 把 compare+branch 融合成 2 B；
+- Zcmp 把 prologue/epilogue 压到 2 B；
+- 16 GPR 让 rd/rs2 只要 4 位，给 funct/offset 留空间。
+
+和 Thumb-2 比：
+
+- Thumb-2 有 32 位指令、flags、更成熟的编译器，性能/代码结构更灵活；
+- RVM16-C 没有 32 位逃生口，复杂操作要靠多条 16 位指令拼；
+- RVM16-C 保留了 RVC 的 00/01/10，RVC 生态的编码习惯还在。
+
+**边界**：目前没有“同一份 C、同一个优化级别、clang -mthumb vs RVM16-C”的实测。已有数据是 FIR/sum 对 RV32EC+Zc* 的实测，以及 Dhrystone/CoreMark 的模型。因此现在能说的是：
+
+> RVM16-C 的目标是进入 Thumb 的 code-size 量级，机制上具备可比性；但“已经比 Thumb 小”需要同源 C 的实测，本文不宣称。
+
+下一步应该做的对比实验：
+
+1. 同一份 Dhrystone/CoreMark/Linpack C；
+2. clang -O2 -mthumb 生成 Thumb-2 二进制；
+3. RVM16-C 用 translator/后端生成二进制；
+4. 比 .text、栈访问、分支数量、trampoline；
+5. 同时记录 IPC/周期，避免只看 code size。
+
+## 15. 接受/放弃判据
+
+一个 code-size profile 不能只靠“看起来更小”。我建议用下面的判据决定是否继续：
+
+- Dhrystone 比 RV32EC+Zc* 小 **≥15%**；
+- CoreMark 不退化超过 **2%**；
+- 同源 C 下，和 Thumb-2 的 code size 差距在 **±10%** 内；
+- spill/reload 增量不超过 **5%**；
+- 分支 trampoline 比例不超过 **2%**；
+- 所有 benchmark 能编译、能跑、自检/CRC 通过。
+
+如果 Dhrystone 收益低于 15%，或者 CoreMark 明显退化，这个 profile 就不值得单独存在；如果 Thumb 对比输得很明显，就应该回到 RVC/Zc 路线，而不是继续加指令。
+
+## 16. 性能、面积、功耗
+
+code size 只是第一维。16 位固定宽度的影响至少有三面：
+
+- **取指**：16 位对齐，取指带宽和 cache 行利用率可能更好；
+- **IPC**：没有 32 位逃生口，复杂操作要拆成多条 16 位指令，动态指令数可能上升；
+- **面积/功耗**：16 GPR + 16 FP 寄存器比 32 GPR 小，但译码/控制逻辑和更多指令数可能抵消。
+
+目前只有 code size 和功能测试，没有 IPC、频率、面积、功耗数据。下一步需要：
+
+- RTL 或周期级模型，跑同样 workload；
+- 统计动态指令数、取指字节、分支数；
+- 对比 RV32EC+Zc* 和 Thumb-2 的 cycles/byte。
+
+## 17. ABI 与工具链
+
+16 GPR 不是“把 x31 删掉”这么简单：
+
+- 调用约定要重新定义参数/返回值/callee-saved；
+- varargs、结构体返回、浮点参数需要新 ABI；
+- Zcmp 的 save-all 会多保存 x8–x15，要权衡；
+- 链接器 relaxation、relocation、trampoline 要支持 16 位分支范围；
+- 调试信息、unwinder、库、启动代码都要适配；
+- 和 RVC 的兼容只到编码层，ABI 不兼容 32 GPR。
+
+LLVM 目前只有 MC，没有 TargetMachine/CC/frame lowering/isel，所以还没有 RVM16-C 的 C 二进制。这是最大的工程缺口。
+
+## 18. 形式化与验证
+
+现在已经有的验证：
+
+- 16 个 f4 block 的分配检查；
+- Spike-C 的 filter/insn 测试；
+- ALU/M/F32/CSR/SYS/Zcb/WFI 的期望值测试；
+- FIR/sum、Zcmp、Zcmt、Zcf 的运行时测试。
+
+还不够的：
+
+- 每条指令的编码/解码形式化检查；
+- RVC 00/01/10 与 Q3 的冲突/保留位检查；
+- 随机指令差分测试（Spike vs 规范模型）；
+- 链接器 relaxation/relocation 的边界测试；
+- 形式化的“所有 16 位模式要么合法、要么明确非法”。
+
+## 19. 真实 workload 与生态
+
+Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile 有价值，需要：
+
+- 真实嵌入式 C 代码的 code-size 分布；
+- 按模块统计：全局/字符串、栈、分支、常量池；
+- 和 RVC、Thumb-2 的同源 C 对比；
+- 工具链/库/调试器/OS 的支持成本；
+- 生态碎片化：多一个 ISA profile，编译器和库要不要多一套。
+
+## 20. 安全
+
+固定 16 位、没有 32 位逃生口，对安全的影响没有被研究：
+
+- 固定宽度可能简化 decode，但不自动等于更安全；
+- 没有 32 位指令，某些攻击面（长指令、非对齐）变化；
+- ROP/JOP、CFI、指针完整性需要单独评估；
+- 16 GPR 的寄存器压力可能增加栈 spill，影响泄漏面。
+
+这些目前都只是问题，不是结论。
+
+## 参考资料
+
+- RISC-V specifications: https://riscv.org/technical/specifications/
+- RISC-V profiles: https://github.com/riscv/riscv-profiles
+- ARM instruction set architecture: https://developer.arm.com/Architectures/Instruction-Set-Architecture
+- Intel SDM: https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
+- 本仓库手册: docs/RVM16-C-Manual.adoc / .html
+- 本仓库评估: docs/RVM16-C-Evaluation.md
