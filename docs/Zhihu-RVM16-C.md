@@ -4,15 +4,15 @@
 
 RVA profile 的讨论结果，是把 C 扩展放进基本要求。很多人对这个结果不满意。
 
-不满意的点不只是“喜不喜欢 C”，而是它把两件事绑在了一起：RVA 的软件生态，和 code-size 敏感场景的压缩指令。RVA 服务的是 application processor，应该优先性能和面积，而不是强制背上 16 位压缩的编码约束。
+让人觉得别扭的，是它把两件事绑在了一起：RVA 的软件生态，和 code-size 敏感场景的压缩指令。RVA 服务的是 application processor，应该优先性能和面积，而不是强制背上 16 位压缩的编码约束。
 
-这篇文章讲我为什么对这个结果不满意，以及我想到的替代方案。我的目标很明确：给嵌入式一个专门的 16 位 ISA，不要让 AP 侧和 RVV 为它买单。
+这篇文章讲我为什么对这个结果不满意，以及我想到的替代方案。我的目标：给嵌入式一个专门的 16 位 ISA，不要让 AP 侧和 RVV 为它买单。
 
 ## 1. RVA 与 C：背景与我的看法
 
 ### 1.1 RVA 是什么
 
-RISC-V 的 profile 不是“某一个核”，而是一组扩展的打包，给软件一个共同目标。
+RISC-V 的 profile 是一组扩展的打包，给软件一个共同目标；它不是“某一个核”。
 
 RVA 是面向 application processor 的 profile：跑 Linux、跑用户态、强调性能。它不是“所有 RISC-V”的 profile，MCU、实时、安全场景有各自的取舍。
 
@@ -30,14 +30,14 @@ C 是 RISC-V 的压缩指令扩展（Compressed）。它保留 32 位指令作�
 
 RVA profile 的讨论里，C 最后被放进了基本要求。
 
-支持的人理由很实际：
+支持的理由很具体：
 
 - 工具链和库默认带 C，生态已经形成；
 - application processor 也吃 I-cache 和取指带宽；
 - profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化；
 - 现有 RVA 二进制默认 C，去掉会破坏兼容。
 
-这些理由都成立。但“成立”不等于“所有人都满意”。
+这些理由都成立，但不等于所有人都满意。
 
 ### 1.4 编码空间：C 的成本不只是解码
 
@@ -46,43 +46,43 @@ RVA profile 的讨论里，C 最后被放进了基本要求。
 - 00/01/10：RVC 压缩指令，占 3/4 的 16 位模式；
 - 11：32 位指令前缀，只剩 1/4。
 
-所以 RVC 不是“免费”的：它把 16 位模式空间的 3/4 拿走了，32 位指令只能从 11 前缀扩展。
+所以 RVC 有编码空间代价：它把 16 位模式空间的 3/4 拿走了，32 位指令只能从 11 前缀扩展。
 
 我在做自定义 RVV（RISC-V Vector 扩展）实现时，最直接的感受是：编码空间紧，不只是“少几条指令”，而是会改变整个实现。
 
 - SEW/LMUL 放进 CSR：每条 vector 指令都对 vtype 有隐含依赖，硬件很难放开并行度；
 - predicate 固定到 v0：predicate 和 data 挤在同一套寄存器命名空间，编译器要额外 copy，rename 也多一维；
 - LMUL 动态寄存器组：编译器做寄存器分配/着色时要考虑宽度变化，硬件 rename/dispatch 也要按 LMUL 拆 uop；
-- 编码空间不够，还会挡住一些更“值钱”的设计，比如 reuse 标记、scoreboard 标记、AI 的 FP4/INT4/MXFP8/LUT 指令。
+- 编码空间不够，还会挡住一些更有价值的设计，比如 reuse 标记、scoreboard 标记、AI 的 FP4/INT4/MXFP8/LUT 指令。
 
 这些不全是 C 造成的，RVV 自己的取舍也占很大部分。但 RVC 占掉 3/4 的 16 位模式，是 AP 侧扩展要面对的一个背景约束。
 
-严格说，32 位编码空间仍有 2^30 个位置，“3/4”说的是 16 位模式，不是 32 位编码总量；但这个前缀约束是真实存在的。对 RVA 这种还要叠加 V/AI 扩展的 profile 来说，这是一个真实的成本。
+严格说，32 位编码空间仍有 2^30 个位置，“3/4”说的是 16 位模式，不是 32 位编码总量；但这个前缀约束存在。对 RVA 这种还要叠加 V/AI 扩展的 profile 来说，这是成本。
 
 ### 1.5 为什么很多人不满意
 
-不满意的核心，不是“喜不喜欢 C”，而是 RVA 的定位。
+不满意的核心是 RVA 的定位。
 
 - RVA 是高性能 application processor，16 位压缩带来的编码约束、解码复杂度，换来的 density 对这类核未必划算；
 - C 的初衷是嵌入式的 code size，不是 application 性能；RVA 继承 C，更多是生态和工具链的惯性；
 - C 一旦 mandatory，所有 RVA 实现都要支持压缩解码，profile 的边界会变模糊；
 - code-size 敏感的场景可以有自己的 profile，不必把 RVA 也拖进 16 位；
-- 嵌入式的 code size 需求是真实的，但应该由嵌入式 profile 承担，不要让 AP 侧 CPU 为它买单。
+- 嵌入式的 code size 需求存在，但应该由嵌入式 profile 承担，不要让 AP 侧 CPU 为它买单。
 
-所以“RVA 不该有 C”是一个立场，不是社区共识。反方也有道理，这一点必须承认。
+所以“RVA 不该有 C”是一个立场，不是社区共识；反方也有道理。
 
 ### 1.6 我的看法
 
-我的看法更直接：**RVA 不应该把 C 作为基本组成。**
+我的看法是：**RVA 不应该把 C 作为基本组成。**
 
-我的目的不是让 RVA 也变 16 位，而是给嵌入式一个专门的 16 位 ISA；AP 侧继续走 32 位，把编码空间留给 V/AI。
+我的目的：给嵌入式一个专门的 16 位 ISA；AP 侧继续走 32 位，把编码空间留给 V/AI。
 
-我的策略不是去删现有 RVA 的 C，而是把两件事分开：
+我的策略是把两件事分开，不去删现有 RVA 的 C：
 
 - RVA 继续服务 application processor；
 - code-size 敏感场景拿一个独立 profile，自己承担“不兼容标准 32 位二进制”的代价。
 
-长期看，如果 RVA 的目标是高性能 32 位，C 应该从 mandatory 里退出；但这需要 profile 版本和生态迁移，不是本文能解决的。短期我不主张直接删，因为现有二进制和工具链的代价太大。
+长期看，如果 RVA 的目标是高性能 32 位，C 应该从 mandatory 里退出；但这需要 profile 版本和生态迁移。短期我不主张直接删，因为现有二进制和工具链的代价太大。
 
 ## 2. 为什么 RVC 还不够
 
@@ -125,7 +125,7 @@ RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位�
 
 ## 4. 所以有了 RVM16-C
 
-讨论到这里，问题就变成了：code-size 敏感场景到底需要什么样的 ISA？
+问题变成：code-size 敏感场景到底需要什么样的 ISA？
 
 我的答案是一个很窄的提案：在 RVC 兼容的前提下，给 code-size 敏感场景一个全部 16 位的 profile。它不追求更快，也不想替代 RISC-V。
 
@@ -136,11 +136,11 @@ RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位�
 - 所有指令都是 16 位，没有 32 位长指令；
 - 只保留 16 个 GPR、16 个 FP 寄存器。
 
-它不是 RVC 的替代，而是 RVC 旁边的另一条路线。
+它是 RVC 旁边的一条路线，不是替代。
 
 ## 5. 16 位里的编码空间：为什么是 16 个寄存器
 
-RVM16-C 的起点不是 16 GPR，而是 32 GPR。
+RVM16-C 最早是 32 GPR，后来才降到 16。
 
 最早做的 RVM16-A：32 个 GPR，FLEN=32，16 个 f4 block，仍然严格 16 位。A 能跑，但它很快暴露了问题：**编码空间不够。**
 
@@ -293,7 +293,7 @@ CSR 有 csrr/csrw/csrs/csrc；SYS 有 ecall/ebreak/mret/wfi/fence/fence.i。
 
 csr4=0 时走 cold 路径，12 位 CSR 地址放在 x7；csr4=1–15 是热 CSR。
 
-## 9. Zc：把 RVC 的便宜占满
+## 9. Zc：复用 RVC 的压缩指令
 
 RVM16-C 不重新发明压缩指令，而是尽量继承 RVC 的 Zc 扩展：
 
@@ -312,13 +312,13 @@ Zcmp 的用法是 save-all：
 
 16 GPR 下会多保存 x8–x15，这是有意的取舍：用一点栈空间换 2 B 的 prologue/epilogue。
 
-Zcb 里有两个容易忽略的依赖：c.sext.b/h 需要 Zbb；c.zext.w 在 RV32 需要 Zba。它们不是无条件可用的，手册里已经写成 optional。
+Zcb 里有几个容易忽略的依赖：c.sext.b/h 需要 Zbb；c.zext.w 在 RV32 需要 Zba。它们不是无条件可用的，手册里已经写成 optional。
 
 ## 10. 和 Thumb 比 code size
 
-Thumb 是这篇文章绕不开的对照。
+Thumb 是最直接的对照。
 
-RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 位一定更小”，而是几个机制叠加：
+RVM16-C 在机制上可以和 Thumb 比 code size。原因有几条：
 
 - 所有指令 16 位，没有 32 位 fallback；Thumb-2 仍会在复杂寻址/大立即数时用 32 位；
 - GP/PC-relative 把全局/字符串地址构造压到 2 B；
@@ -332,11 +332,11 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 - 有 flags，compare/branch 更灵活；
 - 编译器成熟，寄存器分配和指令选择经过多年打磨。
 
-真正该问的是：**在同样的 C、同样的优化级别下，RVM16-C 能不能进入 Thumb-2 的 ±10%？**
+该问的是：**在同样的 C、同样的优化级别下，RVM16-C 能不能进入 Thumb-2 的 ±10%？**
 
 同源 C 的 Thumb 对比是下一步要做的实验。已有数据是 FIR/sum 对 RV32EC+Zc* 的实测，以及 Dhrystone/CoreMark 的模型。因此现在能说的是：
 
-> RVM16-C 的目标是进入 Thumb 的 code-size 量级，机制上具备可比性；但“已经比 Thumb 小”需要同源 C 的实测，本文不宣称。
+> RVM16-C 的目标是进入 Thumb 的 code-size 量级，机制上具备可比性；但“已经比 Thumb 小”需要同源 C 的实测。
 
 下一步应该做的对比实验：
 
@@ -359,9 +359,9 @@ RVM16-C 在机制上是有资格和 Thumb 比 code size 的。原因不是“16 
 
 *图 4：左为 FIR/sum 实测，右为 Dhrystone/CoreMark 静态模型。*
 
-怎么读这张表：
+这张表里：
 
-- FIR/sum 是真实 RVM16-C 二进制，26/20 B，确实比 RV32EC+Zc* 小；
+- FIR/sum 是 RVM16-C 二进制实测，26/20 B，比 RV32EC+Zc* 小；
 - Dhrystone 的 1906 B 是模型，不是编译器输出；加 stub 约 2026 B，仍比 2508 小；
 - CoreMark 的 6316 B 也是模型，只小 1.3%，落在模型误差 ±5–10% 内，只能算**持平**；
 
@@ -371,20 +371,20 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 
 三个 benchmark 已经作为 RV32EC+Zc* baseline 跑完：Dhrystone 自检正确，CoreMark CRC 0x4983，Linpack float n=50 KFLOPS 5.00；它们不是 RVM16-C 的 C 二进制。
 
-## 12. 全流程复盘（方案层）
+## 12. 方案演进
 
-如果把方案演进压缩成几条：
+方案演进大致是：
 
 1. RVM16-A：32 GPR、FLEN=32、16 block，先证明“16 位编码空间”可行。
 2. 转向 C：32 → 16 GPR；8 GPR 作为备选被否；F32 保留。
 3. 编码探索：三地址 c.add3/c.sub3 原型 → 放弃；两地址 + 融合分支。
 4. 指令集成形：ALU-12、bne/blt/blez、GP/PC、LD/ST、M、F32、CSR/SYS。
 5. Zc 集成：Zca/Zcb/Zcmp/Zcf/Zcmt，Zcd 保留，Zcmop 不加。
-6. 定位：不是替代 RVC，而是给 code-size 敏感场景一个独立 profile，并把 Thumb 作为 code-size 对照。
+6. 定位：给 code-size 敏感场景一个独立 profile，不替代 RVC；Thumb 作为 code-size 对照。
 
 ## 13. 结论
 
-**严格 16 位不是通用 C 的 code-size 银弹。**
+**严格 16 位不能让所有 C 代码都变小。**
 
 - 指针/全局/字符串密集的代码，RVM16-C 能小 19–24%（Dhrystone 模型）；
 - 栈/结构体密集的代码，约持平（CoreMark 模型 -1.3%，在误差内）；
@@ -400,7 +400,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 2. 16 GPR 够不够？如果退到 8 GPR，spill 和 ABI 的代价是否值得？
 3. 没有 32 位长指令，对性能/编译器的风险能不能接受？
 4. Zbb/Zba 要不要进这个 profile？还是让 c.sext/c.zext.w 继续 optional？
-5. 哪些真实 workload 最能说明“RVC 不够、但又不想上 Thumb-2”？
+5. 哪些实际 workload 最能说明“RVC 不够、但又不想上 Thumb-2”？
 
 ## 15. 相关工作与横向对比
 
@@ -411,10 +411,10 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 | GPR 数量 | 32 | 16 | 16（Thumb 状态） | 8/16 |
 | 条件码/flags | 无 | 无 | 有（APSR） | 有 |
 | 压缩 load/store | Zcf/Zcb | Zcf/Zcb | 有 | 不适用 |
-| 典型 prologue | Zcmp | Zcmp | push/pop | push/pop |
+| 典型 prologue | push/pop（Zcmp 可选） | Zcmp | push/pop | push/pop |
 | 二进制兼容 | RISC-V | 新 ISA | ARM | x86 |
 
-三者解决 code size 的层次不同：
+四种方案解决 code size 的层次不同：
 
 - RVC 是“32 位基座 + 16 位压缩”，保留 32 位长指令；
 - Thumb-2 是“16 位为主 + 32 位扩展”，有 flags 和 32 位长指令；
@@ -459,22 +459,20 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 调试信息、unwinder、库、启动代码都要适配；
 - 和 RVC 的兼容只到编码层，ABI 不兼容 32 GPR。
 
+## 19. 验证
 
-## 19. 真实验证与形式化
-
-方案不是只在纸上：
+已经做过的验证：
 
 - f4 block 分配有检查；
 - 主要指令组有指令级期望值测试；
 - FIR/sum、Zcmp/Zcmt/Zcf 有运行时测试；
 - 三个 benchmark 作为 RV32EC+Zc* baseline 跑完。
 
-
-## 20. 真实 workload 与生态
+## 20. 实际 workload 与生态
 
 Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile 有价值，需要：
 
-- 真实嵌入式 C 代码的 code-size 分布；
+- 实际嵌入式 C 代码的 code-size 分布；
 - 按模块统计：全局/字符串、栈、分支、常量池；
 - 和 RVC、Thumb-2 的同源 C 对比；
 - 工具链/库/调试器/OS 的支持成本；
