@@ -47,15 +47,33 @@ RVM16-C 想做的是第四种：**没有 32 位长指令，所有指令都是 16
 
 这听起来很激进，但它不是“把 32 位指令删掉”这么简单。真正的问题是：16 位里，到底能放下什么？
 
-## 3. 我的策略：不改 RVA，单独一个 profile
+## 3. RVA 与 C：我的看法
 
 社区里有一种很自然的想法：RVC 已经在 RVA profile 里了，为什么还要再搞一套？
 
-我的回答是：**RVA 是 application profile，它要服务的是应用处理器；code-size 敏感的嵌入式是另一个场景。**
+我的看法更直接：**RVA 不应该把 C 作为基本组成。**
 
-不应该为了嵌入式的 code size 去改 RVA，也不应该要求所有 RISC-V 都变成 16 位。更合适的做法是：给 code-size 敏感场景一个额外的 profile，让它自己承担“不兼容标准 32 位二进制”的代价。
+理由有四条：
 
-RVM16-C 就是这个 profile 的提案：
+- RVA 服务的是 application processor，性能和面积优先；16 位压缩带来的编码约束、解码复杂度，换来的 density 对高性能核未必划算；
+- C 的初衷是嵌入式的 code size，不是 application 性能；RVA 继承 C，更多是生态和工具链的惯性；
+- C 一旦 mandatory，所有 RVA 实现都要支持压缩解码，profile 的边界会变模糊；
+- code-size 敏感的场景可以有自己的 profile，不必把 RVA 也拖进 16 位。
+
+反方也有道理：
+
+- 现有 RVA 二进制和工具链默认 C，去掉会破坏兼容；
+- 应用处理器同样吃 I-cache 和取指带宽，C 不只是“小”，也可能更快；
+- 乱序核里 C 的解码成本可能没有想象中大；
+- profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化。
+
+所以“RVA 不该有 C”是一个立场，不是社区共识。
+
+我的策略不是去删现有 RVA 的 C，而是把两件事分开：RVA 继续服务 application processor；code-size 敏感场景拿一个独立 profile，自己承担“不兼容标准 32 位二进制”的代价。
+
+长期看，如果 RVA 的目标是高性能 32 位，C 应该从 mandatory 里退出；但这需要 profile 版本和生态迁移，不是本文能解决的。短期我不主张直接删，因为现有二进制和工具链的代价太大。
+
+RVM16-C 就是这个独立 profile 的提案：
 
 - 保留 RVC 的 quadrant 00/01/10，一个 bit 都不改；
 - 把 quadrant 11 重定义成新的 16 位空间；
