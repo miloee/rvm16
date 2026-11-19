@@ -4,7 +4,7 @@ RISC-V 的 code size 讨论，绕不开 RVC。
 
 ## 1. 为什么 RVC 还不够
 
-RVC 的做法是：保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
+RVC 是 RISC-V 的压缩指令扩展（Compressed）。它的做法是：保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
 
 但只要你写过嵌入式 C，就会遇到几个很典型的场景。
 
@@ -37,7 +37,7 @@ ARM 的 Thumb 是另一条路：16 位子集为主，Thumb-2 再用 32 位长指
 
 RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位指令，只是给常用指令加了一套 16 位别名。
 
-这三条路有一个共同点：**都保留了更长的 32 位指令。**
+这三条路有一个共同点：**都保留了更长的 32 位指令。** 这里的“32 位长指令”指标准 RISC-V 的 32 位编码，不是 16 位压缩形式。
 
 ## 3. RVA 与 C：我的看法
 
@@ -159,11 +159,34 @@ block 数是硬约束。你多给 ALU 一个 block，就要从别的地方拿。
 
 ## 8. 指令集长什么样
 
-### 7.1 no-flags 与融合分支
+### 8.1 flags 是什么
 
-RVM16-C 不引入条件码。
+x86 的 EFLAGS、ARM 的 APSR，里面有一组条件标志：zero、sign、carry、overflow。比较指令会把结果写进这些标志，后面的条件跳转再读它们。
 
-x86/ARM 有 flags，compare 和 branch 可以分开；RISC-V 没有 flags，这是它的设计哲学。RVM16-C 继承这个哲学，但做了一点补偿：**融合比较和分支。**
+例如 x86：
+
+    cmp eax, ebx
+    jl  label
+
+ARM 也类似：
+
+    cmp r0, r1
+    blt label
+
+这里的 cmp 不产生一个“结果寄存器”，它只改 flags；jl/blt 再根据 flags 决定跳不跳。
+
+RISC-V 没有这套 flags。比较指令把结果写进一个普通 GPR：
+
+    slt t0, a0, a1
+    bne t0, zero, label
+
+这多了一条指令，但处理器里没有隐藏的条件状态：没有“上一条指令改了 flags、下一条指令依赖 flags”的假依赖，也不需要为 flags 做保存/恢复。
+
+RVM16-C 继承 RISC-V 的 no-flags 设计，不引入条件码。这样 16 位编码里不需要留 condition-code 字段，分支条件直接由操作码决定。
+
+### 8.2 no-flags 与融合分支
+
+没有 flags，compare 和 branch 就要分开；RVM16-C 的补偿是**融合比较和分支**。
 
 - c.bne rs1, rs2, off：不相等就跳；
 - c.blt rs1, rs2, off：小于就跳；
@@ -171,11 +194,11 @@ x86/ARM 有 flags，compare 和 branch 可以分开；RISC-V 没有 flags，这�
 
 这样 if (a < b) 不需要先 slt 再 bne，而是一条 2 B 的分支。
 
-代价是：不是所有条件都有融合分支。beq 要展开成 xor + c.beqz；bge 用交换操作数的 blt；bgeu/bltu 要 sltu + c.beqz。这些情况会多一条指令。
+代价是：不是所有条件都有融合分支。c.beqz/c.bnez 是 RVC 自带的零比较分支；beq 先用 xor 把两个数比较成零，再 c.beqz；bge 用交换操作数的 blt；bgeu/bltu 要 sltu + c.beqz。这些情况会多一条指令。
 
 这是一个取舍：**常见条件更短，罕见条件多一条。**
 
-### 7.2 GP/PC-relative
+### 8.3 GP/PC-relative
 
 全局变量和字符串地址是 RVC 最痛的地方。
 
@@ -188,7 +211,7 @@ RVM16-C 留了 gp=x3，用 lwgp/swgp 访问 gp 附近的小全局；用 lwpc 从
 
 代价是：gp 附近的全局要链接器配合；lwpc 的 124 B 窗口需要常量池布局；超出范围要回退到多指令序列。
 
-### 7.3 LD/ST
+### 8.4 LD/ST
 
 lwc/swc 只支持 4 种 base：x8、x9、sp、gp；off2 按访问宽度缩放。
 
@@ -196,13 +219,13 @@ lwc/swc 只支持 4 种 base：x8、x9、sp、gp；off2 按访问宽度缩放。
 
 字节/半字访问交给 Zcb 的 c.lbu/c.lh/c.lhu/c.sb/c.sh。
 
-### 7.4 M 与 F32
+### 8.5 M 与 F32
 
 M 有 mulh/mulhsu/mulhu/div/divu/rem/remu；c.mul 走 Zcb。
 
 F32 有 16 个 FP 寄存器、20 条指令、无 FMA。fcmp 没有 rd 字段，固定写 x7，再由编译器搬到 x8–x15——这是 16 位编码下的妥协。
 
-### 7.5 CSR 与 SYS
+### 8.6 CSR 与 SYS
 
 CSR 有 csrr/csrw/csrs/csrc；SYS 有 ecall/ebreak/mret/wfi/fence/fence.i。
 
