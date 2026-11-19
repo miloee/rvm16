@@ -1,6 +1,6 @@
 # 把 RISC-V 压到 16 位：RVM16-C 的完整探索
 
-> 一句话结论：RVM16-C 在 FIR/sum 上实测更小，Dhrystone 模型小 19–24%，CoreMark 约持平；它不是通用 C 的 code-size 银弹，而是“RVC 兼容、面向 code-size 敏感场景”的一个独立 profile 提案。
+> 一句话结论：RVM16-C 在 FIR/sum 上实测更小，Dhrystone 模型小 19–24%，CoreMark 约持平；它不是通用 C 的 code-size 银弹，而是“RVC 兼容、面向 code-size 敏感场景”的一个独立 profile 提案。机制上它进入 Thumb 的 code-size 量级，但还没有同源 C 的 Thumb 实测。
 
 ## 1. 背景：code size 为什么又回到桌面
 
