@@ -152,7 +152,7 @@ RVM16-C 最早是 32 GPR，后来才降到 16。
 
 刚好 10 位。
 
-![图 2 16 位编码预算](figs/rvm16c-budget.png)
+![图 2 16 位字段分配](figs/rvm16c-budget.png)
 
 *图 2：两地址 ALU 的 16 位字段分配。*
 
