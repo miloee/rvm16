@@ -166,6 +166,14 @@ MC 阶段也踩了坑：操作数类型、HasStdExtZvmc、InstFormat、ELF reloc
 
 如果目标是“所有嵌入式都更小”，这个方案不成立；如果目标是“在 RVC 兼容前提下，给 code-size 敏感场景一个独立 profile”，它是有数据、有 Spike、有 MC、有 benchmark 的提案。
 
+## 讨论：想听到的反馈
+
+1. 单独做一个 code-size profile，和“改 RVA/改 RVC”相比，是不是更合适的层次？
+2. 16 GPR 够不够？如果退到 8 GPR，spill 和 ABI 的代价是否值得？
+3. 没有 32 位逃生口，对性能/编译器的风险能不能接受？
+4. Zbb/Zba 要不要进这个 profile？还是让 c.sext/c.zext.w 继续 optional？
+5. 哪些真实 workload 最能说明“RVC 不够、但又不想上 Thumb-2”？
+
 ## 11. 代码与复现
 
 - GitHub: https://github.com/miloee/rvm16
