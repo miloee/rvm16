@@ -469,4 +469,8 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - **relaxation / relocation**：链接器对指令序列的松弛优化，以及重定位。
 - **IPC**：每周期执行的指令数。
 - **Zca / Zcb / Zcmp / Zcf / Zcmt / Zcd / Zcmop**：RVC 及 Zc 系列压缩扩展的不同子集。
+- **rd / rs2**：指令里的目标寄存器字段和第二个源寄存器字段。
+- **off5**：5 位偏移字段，按 4 字节缩放。
+- **varargs**：可变参数函数。
+- **fcmp**：浮点比较指令。
 - **ROP / JOP / CFI**：返回导向编程、跳转导向编程、控制流完整性。
