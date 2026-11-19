@@ -16,28 +16,36 @@ RISC-V 的 profile 是一组扩展的打包，给软件一个共同目标；它�
 
 RVA 是面向 application processor 的 profile：跑 Linux、跑用户态、强调性能。它不是“所有 RISC-V”的 profile，MCU、实时、安全场景有各自的取舍。
 
-所以 RVA 的取舍应该服务 application processor，而不是把所有嵌入式需求都塞进来。
+所以 RVA 的取舍应该服务 application processor，而不是把所有嵌入式需求都压给 RVA。
 
 ### 1.2 C 是什么
 
-C 是 RISC-V 的压缩指令扩展（Compressed）。它保留 32 位指令作为基座，把最常见的操作压成 16 位。
+C 是 RISC-V 的压缩指令扩展（Compressed）。它保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
 
-这样做的收益很直接：同样的 C 代码，常用指令变短，取指字节变少，I-cache 压力变小，Flash 占用也可能下降。
+收益是：同样的 C 代码，常用指令变短，取指字节变少，I-cache 压力变小，Flash 占用也可能下降。
 
 但 RVC 没有让 32 位指令消失。地址构造、栈帧、比较分支，仍然可能落回 32 位。
 
-### 1.3 讨论结果：C 进了基本要求
+### 1.3 RVC 还不够
 
-RVA profile 的讨论里，C 最后被放进了基本要求。
+具体来说，有几个很典型的场景。
 
-支持的理由很具体：
+第一个是全局变量。访问一个全局 int，典型代码要先构造地址：
 
-- 工具链和库默认带 C，生态已经形成；
-- application processor 也吃 I-cache 和取指带宽；
-- profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化；
-- 现有 RVA 二进制默认 C，去掉会破坏兼容。
+    lui  a5, %hi(g)
+    lw   a4, %lo(g)(a5)
+    ...
+    sw   a4, %lo(g)(a5)
 
-这些理由都成立，但不等于所有人都满意。
+两条 32 位指令，只为了“找到 g”。如果 g 在 gp 附近，本来可以是一条 2 B 的 lwgp/swgp。
+
+第二个是字符串和常量。printf("hello") 里的字符串地址、switch 跳转表、浮点常量，都可能在很远的地方，编译器要先 auipc/addi 或 lui/addi 把地址拼出来。
+
+第三个是 prologue/epilogue（函数入口/出口的栈帧建立与恢复）。一个稍微像样的函数，进来先 push 一堆 callee-saved（被调用者保存）寄存器，出去再 pop。RVC 里栈调整和保存仍然常常落回 32 位；Zcmp 的 cm.push/cm.pop 是后来的扩展，不是 RVC 基座。
+
+第四个是 compare+branch。if (a < b) 在 RISC-V 上要先 slt，再 bne；两条指令。x86/ARM 有 flags，可以 cmp + jcc；RISC-V 没有 flags，这是设计选择，但代价就是 compare 和 branch 分开。
+
+这些问题单独看都不大，叠在一起就是：**RVC 让“常用指令”变短了，但没有让“地址构造、栈帧、比较分支”消失。**
 
 ### 1.4 编码空间：C 的成本不只是解码
 
@@ -59,7 +67,20 @@ RVA profile 的讨论里，C 最后被放进了基本要求。
 
 严格说，32 位编码空间仍有 2^30 个位置，“3/4”说的是 16 位模式，不是 32 位编码总量；但这个前缀约束存在。对 RVA 这种还要叠加 V/AI 扩展的 profile 来说，这是成本。
 
-### 1.5 为什么很多人不满意
+### 1.5 讨论结果：C 进了基本要求
+
+RVA profile 的讨论里，C 最后被放进了基本要求。
+
+支持的理由很具体：
+
+- 工具链和库默认带 C，生态已经形成；
+- application processor 也依赖 I-cache 和取指带宽；
+- profile 需要一个共同的软件目标，C 变成 optional 会带来碎片化；
+- 现有 RVA 二进制默认 C，去掉会破坏兼容。
+
+这些理由都成立，但不等于所有人都满意。
+
+### 1.6 为什么很多人不满意
 
 不满意的核心是 RVA 的定位。
 
@@ -71,7 +92,7 @@ RVA profile 的讨论里，C 最后被放进了基本要求。
 
 所以“RVA 不该有 C”是一个立场，不是社区共识；反方也有道理。
 
-### 1.6 我的看法
+### 1.7 我的看法
 
 我的看法是：**RVA 不应该把 C 作为基本组成。**
 
@@ -84,30 +105,7 @@ RVA profile 的讨论里，C 最后被放进了基本要求。
 
 长期看，如果 RVA 的目标是高性能 32 位，C 应该从 mandatory 里退出；但这需要 profile 版本和生态迁移。短期我不主张直接删，因为现有二进制和工具链的代价太大。
 
-## 2. 为什么 RVC 还不够
-
-RVC 的做法是：保留 32 位指令作为基座，把最常见的操作压成 16 位。于是你得到了一个“大部分时候 16 位、必要时 32 位”的 ISA。
-
-但只要你写过嵌入式 C，就会遇到几个很典型的场景。
-
-第一个是全局变量。访问一个全局 int，典型代码要先构造地址：
-
-    lui  a5, %hi(g)
-    lw   a4, %lo(g)(a5)
-    ...
-    sw   a4, %lo(g)(a5)
-
-两条 32 位指令，只为了“找到 g”。如果 g 在 gp 附近，本来可以是一条 2 B 的 lwgp/swgp。
-
-第二个是字符串和常量。printf("hello") 里的字符串地址、switch 跳转表、浮点常量，都可能在很远的地方，编译器要先 auipc/addi 或 lui/addi 把地址拼出来。
-
-第三个是 prologue/epilogue（函数入口/出口的栈帧建立与恢复）。一个稍微像样的函数，进来先 push 一堆 callee-saved（被调用者保存）寄存器，出去再 pop。RVC 里栈调整和保存仍然常常落回 32 位；Zcmp 的 cm.push/cm.pop 是后来的扩展，不是 RVC 基座。
-
-第四个是 compare+branch。if (a < b) 在 RISC-V 上要先 slt，再 bne；两条指令。x86/ARM 有 flags，可以 cmp + jcc；RISC-V 没有 flags，这是设计选择，但代价就是 compare 和 branch 分开。
-
-这些问题单独看都不大，叠在一起就是：**RVC 让“常用指令”变短了，但没有让“地址构造、栈帧、比较分支”消失。**
-
-## 3. 三条路线：x86、Thumb、RVC
+## 2. 三条路线：x86、Thumb、RVC
 
 在动手之前，先看别人怎么解决 code size。
 
@@ -123,7 +121,7 @@ RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位�
 
 *图 1：x86 是变长，Thumb-2/RVC 是 16+32，RVM16-C 只有 16 位；横条每格是一条指令。*
 
-## 4. 所以有了 RVM16-C
+## 3. 所以有了 RVM16-C
 
 问题变成：code-size 敏感场景到底需要什么样的 ISA？
 
@@ -138,7 +136,7 @@ RISC-V 的 RVC 是第三条：32 位基座 + 16 位压缩。它不改变 32 位�
 
 它是 RVC 旁边的一条路线，不是替代。
 
-## 5. 16 位里的编码空间：为什么是 16 个寄存器
+## 4. 16 位里的编码空间：为什么是 16 个寄存器
 
 RVM16-C 最早是 32 GPR，后来才降到 16。
 
@@ -172,7 +170,7 @@ RVM16-C 最早是 32 GPR，后来才降到 16。
 
 这就是为什么 RVM16-C 是 16 GPR，而不是 32，也不是 8。
 
-## 6. 三地址：听起来很美
+## 5. 三地址：听起来很美
 
 三地址指令看起来更“正统”：add rd, rs1, rs2，一条指令算完，不用先 move。
 
@@ -189,7 +187,7 @@ RVM16-C 最早是 32 GPR，后来才降到 16。
 
 三地址不是不好，只是在 16 位的编码空间下不划算。
 
-## 7. 16 个 block 怎么分
+## 6. 16 个 block 怎么分
 
 16 位空间里，f4 有 16 个 block。你可以把它看成 16 个编码槽位，每个槽位放一类指令。
 
@@ -219,9 +217,9 @@ RVM16-C 最早是 32 GPR，后来才降到 16。
 
 block 数是硬约束。你多给 ALU 一个 block，就要从别的地方拿。
 
-## 8. 指令集长什么样
+## 7. 指令集长什么样
 
-### 8.1 flags 是什么
+### 7.1 flags 是什么
 
 x86 的 EFLAGS、ARM 的 APSR，里面有一组条件标志：zero、sign、carry、overflow。比较指令会把结果写进这些标志，后面的条件跳转再读它们。
 
@@ -246,7 +244,7 @@ RISC-V 没有这套 flags。比较指令把结果写进一个普通 GPR：
 
 RVM16-C 继承 RISC-V 的 no-flags 设计，不引入条件码。这样 16 位编码里不需要留 condition-code 字段，分支条件直接由操作码决定。
 
-### 8.2 no-flags 与融合分支
+### 7.2 no-flags 与融合分支
 
 没有 flags，compare 和 branch 就要分开；RVM16-C 的补偿是**融合比较和分支**。
 
@@ -260,7 +258,7 @@ RVM16-C 继承 RISC-V 的 no-flags 设计，不引入条件码。这样 16 位�
 
 这是一个取舍：**常见条件更短，罕见条件多一条。**
 
-### 8.3 GP/PC-relative
+### 7.3 GP/PC-relative
 
 全局变量和字符串地址是 RVC 最痛的地方。
 
@@ -273,7 +271,7 @@ RVM16-C 留了 gp=x3，用 lwgp/swgp 访问 gp 附近的小全局；用 lwpc 从
 
 代价是：gp 附近的全局要链接器配合；lwpc 的 124 B 窗口需要常量池布局；超出范围要回退到多指令序列。
 
-### 8.4 LD/ST
+### 7.4 LD/ST
 
 lwc/swc 只支持 4 种 base：x8、x9、sp、gp；off2 按访问宽度缩放。
 
@@ -281,19 +279,19 @@ lwc/swc 只支持 4 种 base：x8、x9、sp、gp；off2 按访问宽度缩放。
 
 字节/半字访问交给 Zcb 的 c.lbu/c.lh/c.lhu/c.sb/c.sh。
 
-### 8.5 M 与 F32
+### 7.5 M 与 F32
 
 M 有 mulh/mulhsu/mulhu/div/divu/rem/remu；c.mul 走 Zcb。
 
 F32 有 16 个 FP 寄存器、20 条指令、无 FMA。fcmp 没有 rd 字段，固定写 x7，再由编译器搬到 x8–x15——这是 16 位编码下的妥协。
 
-### 8.6 CSR 与 SYS
+### 7.6 CSR 与 SYS
 
 CSR 有 csrr/csrw/csrs/csrc；SYS 有 ecall/ebreak/mret/wfi/fence/fence.i。
 
 csr4=0 时走 cold 路径，12 位 CSR 地址放在 x7；csr4=1–15 是热 CSR。
 
-## 9. Zc：复用 RVC 的压缩指令
+## 8. Zc：复用 RVC 的压缩指令
 
 RVM16-C 不重新发明压缩指令，而是尽量继承 RVC 的 Zc 扩展：
 
@@ -314,7 +312,7 @@ Zcmp 的用法是 save-all：
 
 Zcb 里有几个容易忽略的依赖：c.sext.b/h 需要 Zbb；c.zext.w 在 RV32 需要 Zba。它们不是无条件可用的，手册里已经写成 optional。
 
-## 10. 和 Thumb 比 code size
+## 9. 和 Thumb 比 code size
 
 Thumb 是最直接的对照。
 
@@ -346,7 +344,7 @@ RVM16-C 在机制上可以和 Thumb 比 code size。原因有几条：
 4. 比 .text、栈访问、分支数量、trampoline（跳转垫片）；
 5. 同时记录 IPC/周期，避免只看 code size。
 
-## 11. 数据：哪些是实测，哪些是模型
+## 10. 数据：哪些是实测，哪些是模型
 
 | 内核 | RV32EC+Zc* | RVM16-C | 性质 |
 |---|---:|---:|---|
@@ -371,7 +369,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 
 三个 benchmark 已经作为 RV32EC+Zc* baseline 跑完：Dhrystone 自检正确，CoreMark CRC 0x4983，Linpack float n=50 KFLOPS 5.00；它们不是 RVM16-C 的 C 二进制。
 
-## 12. 方案演进
+## 11. 方案演进
 
 方案演进大致是：
 
@@ -382,7 +380,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 5. Zc 集成：Zca/Zcb/Zcmp/Zcf/Zcmt，Zcd 保留，Zcmop 不加。
 6. 定位：给 code-size 敏感场景一个独立 profile，不替代 RVC；Thumb 作为 code-size 对照。
 
-## 13. 结论
+## 12. 结论
 
 **严格 16 位不能让所有 C 代码都变小。**
 
@@ -394,7 +392,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 
 如果目标是“所有嵌入式都更小”，这个方案不成立；如果目标是“在 RVC 兼容前提下，给 code-size 敏感场景一个独立 profile”，它是有数据、有原型、有 benchmark 的提案。
 
-## 14. 讨论：想听到的反馈
+## 13. 讨论：想听到的反馈
 
 1. 单独做一个 code-size profile，和“改 RVA/改 RVC”相比，是不是更合适的层次？
 2. 16 GPR 够不够？如果退到 8 GPR，spill 和 ABI 的代价是否值得？
@@ -402,7 +400,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 4. Zbb/Zba 要不要进这个 profile？还是让 c.sext/c.zext.w 继续 optional？
 5. 哪些实际 workload 最能说明“RVC 不够、但又不想上 Thumb-2”？
 
-## 15. 相关工作与横向对比
+## 14. 相关工作与横向对比
 
 | | RVC | RVM16-C | ARM Thumb-2 | x86 |
 |---|---|---|---|---|
@@ -421,7 +419,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 - x86 用变长指令换密度，代价是解码复杂；
 - RVM16-C 是“全部 16 位、没有 32 位长指令”，用兼容性换固定取指宽度。
 
-## 16. 接受/放弃判据
+## 15. 接受/放弃判据
 
 一个 code-size profile 不能只靠“看起来更小”。我建议用下面的判据决定是否继续：
 
@@ -434,7 +432,7 @@ CoreMark 为什么持平？因为它是栈/结构体密集，GP=0，只有 32 �
 
 如果 Dhrystone 收益低于 15%，或者 CoreMark 明显退化，这个 profile 就不值得单独存在；如果 Thumb 对比输得很明显，就应该回到 RVC/Zc 路线，而不是继续加指令。
 
-## 17. 性能、面积、功耗
+## 16. 性能、面积、功耗
 
 code size 只是第一维。16 位固定宽度的影响至少有三面：
 
@@ -448,7 +446,7 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 统计动态指令数、取指字节、分支数；
 - 对比 RV32EC+Zc* 和 Thumb-2 的 cycles/byte。
 
-## 18. ABI（应用二进制接口）与工具链
+## 17. ABI（应用二进制接口）与工具链
 
 16 GPR 不是“减少寄存器数量”这么简单：
 
@@ -459,7 +457,7 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - 调试信息、unwinder、库、启动代码都要适配；
 - 和 RVC 的兼容只到编码层，ABI 不兼容 32 GPR。
 
-## 19. 验证
+## 18. 验证
 
 已经做过的验证：
 
@@ -468,7 +466,7 @@ code size 只是第一维。16 位固定宽度的影响至少有三面：
 - FIR/sum、Zcmp/Zcmt/Zcf 有运行时测试；
 - 三个 benchmark 作为 RV32EC+Zc* baseline 跑完。
 
-## 20. 实际 workload 与生态
+## 19. 实际 workload 与生态
 
 Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile 有价值，需要：
 
@@ -478,7 +476,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 - 工具链/库/调试器/OS 的支持成本；
 - 生态碎片化：多一个 ISA profile，编译器和库要不要多一套。
 
-## 21. 安全
+## 20. 安全
 
 固定 16 位、没有 32 位长指令，安全影响需要单独评估：
 
@@ -489,7 +487,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
 
 这些目前都只是问题，不是结论。
 
-## 22. 代码与复现
+## 21. 代码与复现
 
 - GitHub: https://github.com/miloee/rvm16
 - Spike 分支: https://github.com/miloee/rvm16/tree/spike-c/spike-c
@@ -510,7 +508,7 @@ Dhrystone/CoreMark 是微基准，不是产品代码。要证明这个 profile �
     ../configure --prefix=$PWD/install
     make -j20
 
-## 23. 术语表
+## 22. 术语表
 
 - **RVA profile**：RISC-V 面向 application processor 的 profile，强调性能、生态和软件兼容。
 - **AP / application processor**：应用处理器，跑 Linux/用户态，强调性能。
